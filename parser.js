@@ -1,7 +1,17 @@
+/*
+
+	A library for parsing a simple language
+
+*/
 const SimpleParser = (() => {
 
+	/*
+		The lexer/tokenizer for the language
+		Converts an input string into a stream of tokens
+	*/
 	const Lexer = (() => {
 
+		/* The regular expressions for matching tokens */
 		const TOKEN_REGEXES = {
 			"integer": /^[0-9]+/,
 			"identifier": /^[A-Za-z_][A-Za-z_0-9]*/,
@@ -18,24 +28,49 @@ const SimpleParser = (() => {
 			">": /^\>/,
 			".": /^\./,
 			",": /^\,/,
+			"!": /^\!/,
+			"=": /^\=/,
 			"whitespace": /^\s+/
 		};
 
+		/* The token data container class */
 		class Token {
+			/*
+				Creates a token with the given data
+				@param type - string - the type of the token
+				@param value - string - the string value of the token
+			*/
 			constructor(type, value) {
 				this.type = type;
 				this.value = value;
 			}
 		}
 
-		class TokenList {
+		/* The stream of tokens */
+		class TokenStream {
 
+			/*
+				Fields:
+
+				tokens - Token[] - the source array of tokens
+				position - natural_number - the current position in the token stream
+				savedStates - natural_number[] - the saved position states, used to restore to a previous position state
+			*/
+
+			/* 
+				Creates a token stream from the given array of tokens
+				@param tokens - Token[] - the sourcce array of tokens
+			*/
 			constructor(tokens) {
 				this.tokens = tokens;
 				this.position = 0;
 				this.savedStates = [];
 			}
 
+			/*
+				Gets the next token in the token stream
+				@return Token - the next token in the stream, or a Token with type "EOF" if reached the end of the stream
+			*/
 			next() {
 				if (this.position >= this.tokens.length) {
 					return new Token("EOF", "");
@@ -45,15 +80,22 @@ const SimpleParser = (() => {
 				}
 			}
 
+			/* saves the current position into the stack of states */
 			save() {
 				this.savedStates.push(this.position);
 			}
 
+			/* restores back to the most recently saved position state */
 			restore() {
 				this.position = this.savedStates.pop();
 			}
 		}
 
+		/*
+			Converts the input string into a stream of tokens
+			@param s - string - the input string
+			@return TokenStream - the stream of tokens
+		*/
 		function lex(s) {
 			let tokens = [];
 			while (s.length > 0) {
@@ -83,15 +125,29 @@ const SimpleParser = (() => {
 
 	})();
 
+	/*
+		Parses expressions from the token stream
+	*/
 	const ExprParser = (() => {
 
+		/* The expression data container class */
 		class Expr {
+			/*
+				Creates an expression from the given data
+				@param type - string - the expression type
+				@param data - any - the data associated with this expression
+			*/
 			constructor(type, data) {
 				this.type = type;
 				this.data = data;
 			}
 		}
 
+		/*
+			Attempts to parse an expression enclosed in parentheses
+			@param tokens - TokenStream - the token stream
+			@return Expr? - the expr if the token stream matches a parenthetical expr, otherwise false
+		*/
 		function parentheses(tokens) {	
 			tokens.save();
 			let nextToken = tokens.next();
@@ -111,6 +167,11 @@ const SimpleParser = (() => {
 			}
 		}
 
+		/*
+			Attempts to parse an integer literal expression
+			@param tokens - TokenStream - the token stream
+			@return Expr? - the expr if the token stream matches an integer literal expr, otherwise false
+		*/
 		function integerLiteral(tokens) {
 			tokens.save();
 			let nextToken = tokens.next();
@@ -123,6 +184,11 @@ const SimpleParser = (() => {
 			}
 		}
 
+		/*
+			Attempts to parse a variable name expression (a non-keyword identifier)
+			@param tokens - TokenStream - the token stream
+			@return Expr? - the expr if the token stream matches a variable name expr, otherwise false
+		*/
 		function variableName(tokens) {
 			tokens.save();
 			let nextToken = tokens.next();
@@ -135,6 +201,18 @@ const SimpleParser = (() => {
 			}
 		}
 
+		
+		/*
+			Attempts to parse an atomic expression
+			An Atomic Expression is one of:
+				Parentheses Expression,
+				Integer Literal Expression,
+				Variable Name Expression
+			It is called an atomic expression because it is an expression that cannot be broken down into further sub-expressions, it is the smallest unit, hence "atomic".
+			Note: Parenthetical expressions can be broken down further but they are bundled with the other atomic expressions because they share the same precedence (the highest)
+			@param tokens - TokenStream - the token stream
+			@return Expr? - the expr if the token stream matches an atomic expr, otherwise false
+		*/
 		function atom(tokens) {
 			let exprParsers = [parentheses, integerLiteral, variableName];
 			for (let parser of exprParsers) {
@@ -146,6 +224,22 @@ const SimpleParser = (() => {
 			throw "Expected atomic expression (parentheses, integer literal, or variable name) but none found.";
 		}
 
+		/*
+			Attempts to parse a multiplication, division, or modulo expression
+			An Multiplication, Division, or Modulo Expression is one of:
+				Atomic Expression,
+				{
+					left: Atomic Expression,
+					right: Atomic Expression
+				},
+				{
+					left: Multiplication, Division, or Modulo Expression,
+					right: Atomic Expression
+				} 
+			Note: parses as many as possible if in sequence, giving precedence (closer to leaves of expr tree) to operators the occur first when read left to right
+			@param tokens - TokenStream - the token stream
+			@return Expr? - the expr if the token stream matches an multiplication, division, or modulo expr, otherwise false
+		*/
 		function mulDivMod(tokens) {
 			let expr = atom(tokens);
 			let op;
@@ -159,6 +253,22 @@ const SimpleParser = (() => {
 			return expr;
 		}
 
+		/*
+			Attempts to parse an addition or subtraction expression
+			An Addition or Subtraction Expression is one of:
+				Multiplication or Division Expression,
+				{
+					left: Multiplication, Division, or Modulo Expression,
+					right: Multiplication, Division, or Modulo Expression
+				},
+				{
+					left: Addition or Subtraction Expression,
+					right: Multiplication, Division, or Modulo Expression
+				} 
+			Note: parses as many as possible if in sequence, giving precedence (closer to leaves of expr tree) to operators the occur first when read left to right
+			@param tokens - TokenStream - the token stream
+			@return Expr? - the expr if the token stream matches an addition or subtraction expr, otherwise false
+		*/
 		function addSub(tokens) {
 			let expr = mulDivMod(tokens);
 			let op;
@@ -172,30 +282,135 @@ const SimpleParser = (() => {
 			return expr;
 		}
 
+		//TODO add function call and object field expr
+
+		/*
+			Attempts to parse an expr from the given token stream
+			@param tokens - TokenStream - the token stream
+			@return Expr? - the expr if the token stream matches an expr, otherwise false
+		*/
 		function parseExpr(tokens) {
 			return addSub(tokens);
 		}
 
 		return {
-			parseExpr
+			parse: parseExpr
 		};
 
 	})();
 
+	/*
+		Parses statements from the token stream
+	*/
+	const StatementParser = (() => {
+
+		/* The statement data container class */
+		class Statement {
+			/*
+				Creates a statement from the given data
+				@param type - string - the statement type
+				@param data - any - the data associated with this statement
+			*/
+			constructor(type, data) {
+				this.type = type;
+				this.data = data;
+			}
+		}
+
+		/*
+			The functions for parsing different statement types 
+			Signature: (tokens) -> Statement?
+			Each function returns the statement if it matches the given statement type, otherwise false
+		*/
+		const STATEMENT_PARSERS = [
+			assignment,
+			expr
+		];
+
+		/*
+			Attempts to parse an assignment statement
+			An Assignment Statement is:
+				<Variable Name Expression> = <Expression>
+			@param tokens - TokenStream - the token stream
+			@return Statement? - the statement if it matches an assigment statement, otherwise false
+		*/
+		function assignment(tokens) {
+			tokens.save();
+			let lhs = ExprParser.parse(tokens); // left-hand side
+			let equalsToken = tokens.next();
+			let rhs = ExprParser.parse(tokens); // right-hand side
+			if (lhs.type == "variable" && equalsToken.type == "=" && rhs) {
+				return new Statement("assignment", {variable: lhs.data, value: rhs});
+			}
+			else {
+				tokens.restore();
+				return false;
+			}
+		}
+
+		/*
+			Attempts to parse an expression statement
+			An Expression Statement is:
+				<Expression>
+			It is just a single expression as a statement. This is can be used for any
+				expression, but is most often used for function call expressions
+				where the return value is ignored,
+			@param tokens - TokenStream - the token stream
+			@return Statement? - the statement if it matches an assigment statement, otherwise false
+		*/
+		function expr(tokens) {
+			tokens.save();
+			let expr = ExprParser.parse(tokens);
+			if (expr) {
+				return new Statement("expr", expr);
+			}
+			else {
+				tokens.restore();
+				return false;
+			}
+		}
+
+		/*
+			Attempts to parse a statement of any type
+			@param tokens - TokenStream - the token stream
+			@return Statement? - the statement if it matches any statement type, otherwise false
+		*/
+		function parseStatement(tokens) {
+			for (let parser of STATEMENT_PARSERS) {
+				let statement = parser(tokens);
+				if (statement) {
+					return statement;
+				}
+			}
+			return false;
+		}
+
+		return {
+			parse: parseStatement
+		};
+
+	})();
+
+	/*
+		Parse an input string
+		@param s - string - the input source string
+		@return Statement[] - the statements described by the source
+	*/
 	function parse(s) {
 		const tokens = Lexer.lex(s);
-		return ExprParser.parseExpr(tokens);
+		return StatementParser.parse(tokens);
 	}
 
 	return {
 		parse
 	};
 
+
 })();
 
 var result = SimpleParser.parse(`
 
-10 + x*4
+x = 10 + x*4
 
 `);
 
