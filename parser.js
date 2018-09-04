@@ -89,6 +89,11 @@ const SimpleParser = (() => {
 			restore() {
 				this.position = this.savedStates.pop();
 			}
+
+			/* clears the last saved state without restoring to it */
+			clearSave() {
+				this.savedStates.pop();
+			}	
 		}
 
 		/*
@@ -155,6 +160,7 @@ const SimpleParser = (() => {
 				let expr = parseExpr(tokens);
 				let endToken = tokens.next();
 				if (endToken.type == ")") {
+					tokens.clearSave();
 					return expr;
 				}
 				else {
@@ -176,6 +182,7 @@ const SimpleParser = (() => {
 			tokens.save();
 			let nextToken = tokens.next();
 			if (nextToken.type == "integer") {
+				tokens.clearSave();
 				return new Expr("literal", parseInt(nextToken.value));
 			}
 			else {
@@ -193,6 +200,7 @@ const SimpleParser = (() => {
 			tokens.save();
 			let nextToken = tokens.next();
 			if (nextToken.type == "identifier") {
+				tokens.clearSave();
 				return new Expr("variable", nextToken.value);
 			}
 			else {
@@ -249,10 +257,10 @@ const SimpleParser = (() => {
 
 			let type;
 			while (tokens.save(), ["(", "."].indexOf((type = tokens.next().type)) > -1) { // save for when next token is not '(', and loop so multiple function calls can be strung together like f()(x)(y)
+				tokens.clearSave(); // '(' or '.' is valid so don't need to save it because it does not need to be undone later
 				if (type == "(") { // parse function call expr
 					let args = [];
-					while (tokens.save(), tokens.next().type != ")") { // save so non ')' token can be restored and used in parsing argument expression
-						tokens.restore(); // undo last token request since the token was not an ')'
+					while (true) { 
 						let arg = parseExpr(tokens);
 						if (!arg) {
 							throw "Expected argument expression but none found";
@@ -280,6 +288,7 @@ const SimpleParser = (() => {
 				}
 			}
 			tokens.restore(); // undo last request of token because it was not a '('
+			tokens.clearSave();
 			return expr;
 		}
 
@@ -302,11 +311,10 @@ const SimpleParser = (() => {
 		function mulDivMod(tokens) {
 			let expr = functionCallOrObjectField(tokens);
 			let op;
-			tokens.save(); // save before the first operator token request in case it is not and operator
-			while (["*", "/", "%"].indexOf((op = tokens.next().type)) > -1) {
+			while (tokens.save(), ["*", "/", "%"].indexOf((op = tokens.next().type)) > -1) { // save before the operator token request in case it is not one of '*', '/', '%'
+				tokens.clearSave(); // it is a valid operator so save can be cleared
 				let rhs = functionCallOrObjectField(tokens); // right-hand side
 				expr = new Expr(op, {left: expr, right: rhs});
-				tokens.save(); // in case next token is not one of '*', '/', '%'
 			}
 			tokens.restore(); // undo the last next token request because it was not an operator
 			return expr;
@@ -331,11 +339,10 @@ const SimpleParser = (() => {
 		function addSub(tokens) {
 			let expr = mulDivMod(tokens);
 			let op;
-			tokens.save(); // save before the first operator token request in case it is not and operator
-			while (["+", "-"].indexOf((op = tokens.next().type)) > -1) {
+			while (tokens.save(), ["+", "-"].indexOf((op = tokens.next().type)) > -1) { // save before the operator token request in case it is not one of '+', '-'
+				tokens.clearSave(); // it is a valid operator so save can be cleared
 				let rhs = mulDivMod(tokens); // right-hand side
 				expr = new Expr(op, {left: expr, right: rhs});
-				tokens.save(); // in case next token is not one of '+', '-'
 			}
 			tokens.restore(); // undo the last next token request because it was not an operator
 			return expr;
@@ -395,8 +402,13 @@ const SimpleParser = (() => {
 			tokens.save();
 			let lhs = ExprParser.parse(tokens); // left-hand side
 			let equalsToken = tokens.next();
+			if (equalsToken.type != "=") {
+				tokens.restore();
+				return false;
+			}
 			let rhs = ExprParser.parse(tokens); // right-hand side
-			if (lhs.type == "variable" && equalsToken.type == "=" && rhs) {
+			if (lhs.type == "variable" && rhs) { // TODO add object field assignment
+				tokens.clearSave();
 				return new Statement("assignment", {variable: lhs.data, value: rhs});
 			}
 			else {
@@ -419,6 +431,7 @@ const SimpleParser = (() => {
 			tokens.save();
 			let expr = ExprParser.parse(tokens);
 			if (expr) {
+				tokens.clearSave();
 				return new Statement("expr", expr);
 			}
 			else {
@@ -467,7 +480,7 @@ const SimpleParser = (() => {
 
 var result = SimpleParser.parse(`
 
-x = 10 + g(x, y)(z)*4 + window.getBounds(100, 200).width
+1 + g(100)
 
 `);
 
