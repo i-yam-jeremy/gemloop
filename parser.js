@@ -116,7 +116,7 @@ const SimpleParser = (() => {
 					throw "Unidentitifed token: " + s;
 				}
 			}
-			return new TokenList(tokens);
+			return new TokenStream(tokens);
 		}
 
 		return {
@@ -201,7 +201,6 @@ const SimpleParser = (() => {
 			}
 		}
 
-		
 		/*
 			Attempts to parse an atomic expression
 			An Atomic Expression is one of:
@@ -223,29 +222,78 @@ const SimpleParser = (() => {
 			}
 			throw "Expected atomic expression (parentheses, integer literal, or variable name) but none found.";
 		}
+		
+		/*
+			Attempts to parse a function call expression
+			A Function Call Expression is one of:
+				Atomic Expression,
+				{
+					func: Atomic Expression,
+					args: Expression[]
+				},
+				{
+					func: Function Call Expr,
+					args: Expression[]
+				}
+			@param tokens - TokenStream - the token stream
+			@return Expr? - the expr if the token stream matches a function call expr, otherwise false
+		*/
+		function functionCall(tokens) {
+			tokens.save();
+			let expr = atom(tokens);
+			if (!expr) {
+				tokens.restore();
+				return false;
+			}
+
+			while (tokens.save(), tokens.next().type == "(") { // save for when next token is not '(', and loop so multiple function calls can be strung together like f()(x)(y)
+				let args = [];
+				while (tokens.save(), tokens.next().type != ")") { // save so non ')' token can be restored and used in parsing argument expression
+					tokens.restore(); // undo last token request since the token was not an ')'
+					let arg = parseExpr(tokens);
+					if (!arg) {
+						throw "Expected argument expression but none found";
+					}
+					args.push(arg);
+					let commaToken = tokens.next();
+					if (commaToken.type == ",") {
+						continue;
+					}
+					else if (commaToken.type == ")") {
+						break;
+					}
+					else {
+						throw "Expected ',' or ')' but found '" + commaToken.type + "'";
+					}
+				}
+				expr = new Expr("function-call", {func: expr, args: args});
+			}
+			tokens.restore(); // undo last request of token because it was not a '('
+			return expr;
+		}
 
 		/*
 			Attempts to parse a multiplication, division, or modulo expression
 			An Multiplication, Division, or Modulo Expression is one of:
-				Atomic Expression,
+				Function Call Expression,
 				{
-					left: Atomic Expression,
-					right: Atomic Expression
+					left: Function Call Expression,
+					right: Function Call Expression
 				},
 				{
 					left: Multiplication, Division, or Modulo Expression,
-					right: Atomic Expression
+					right: Function Call Expression
 				} 
 			Note: parses as many as possible if in sequence, giving precedence (closer to leaves of expr tree) to operators the occur first when read left to right
 			@param tokens - TokenStream - the token stream
 			@return Expr? - the expr if the token stream matches an multiplication, division, or modulo expr, otherwise false
 		*/
 		function mulDivMod(tokens) {
-			let expr = atom(tokens);
+			let expr = functionCall(tokens);
 			let op;
 			tokens.save(); // save before the first operator token request in case it is not and operator
 			while (["*", "/", "%"].indexOf((op = tokens.next().type)) > -1) {
-				let rhs = atom(tokens); // right-hand side
+				let rhs = functionCall(tokens); // right-hand side
 				expr = new Expr(op, {left: expr, right: rhs});
 				tokens.save(); // in case next token is not one of '*', '/', '%'
 			}
@@ -282,7 +330,7 @@ const SimpleParser = (() => {
 			return expr;
 		}
 
-		//TODO add function call and object field expr
+		//TODO add object field expr
 
 		/*
 			Attempts to parse an expr from the given token stream
@@ -410,7 +458,7 @@ const SimpleParser = (() => {
 
 var result = SimpleParser.parse(`
 
-x = 10 + x*4
+x = 10 + g(x, y)(z)*4
 
 `);
 
