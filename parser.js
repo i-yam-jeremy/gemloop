@@ -222,23 +222,24 @@ const SimpleParser = (() => {
 			}
 			throw "Expected atomic expression (parentheses, integer literal, or variable name) but none found.";
 		}
-		
+
 		/*
-			Attempts to parse a function call expression
-			A Function Call Expression is one of:
+			Attempts to parse a function call or object field expression
+			A Function Call or Object Field Expression is one of:
 				Atomic Expression,
 				{
 					func: Atomic Expression,
 					args: Expression[]
 				},
 				{
-					func: Function Call Expr,
+					func: Function Call or Object Field Expression,
 					args: Expression[]
 				}
+			Note: these two expression types are in the same function because they have equal precedence and can be interlaced, for example obj.getBounds(10).width
 			@param tokens - TokenStream - the token stream
 			@return Expr? - the expr if the token stream matches a function call expr, otherwise false
 		*/
-		function functionCall(tokens) {
+		function functionCallOrObjectField(tokens) {
 			tokens.save();
 			let expr = atom(tokens);
 			if (!expr) {
@@ -246,27 +247,37 @@ const SimpleParser = (() => {
 				return false;
 			}
 
-			while (tokens.save(), tokens.next().type == "(") { // save for when next token is not '(', and loop so multiple function calls can be strung together like f()(x)(y)
-				let args = [];
-				while (tokens.save(), tokens.next().type != ")") { // save so non ')' token can be restored and used in parsing argument expression
-					tokens.restore(); // undo last token request since the token was not an ')'
-					let arg = parseExpr(tokens);
-					if (!arg) {
-						throw "Expected argument expression but none found";
+			let type;
+			while (tokens.save(), ["(", "."].indexOf((type = tokens.next().type)) > -1) { // save for when next token is not '(', and loop so multiple function calls can be strung together like f()(x)(y)
+				if (type == "(") { // parse function call expr
+					let args = [];
+					while (tokens.save(), tokens.next().type != ")") { // save so non ')' token can be restored and used in parsing argument expression
+						tokens.restore(); // undo last token request since the token was not an ')'
+						let arg = parseExpr(tokens);
+						if (!arg) {
+							throw "Expected argument expression but none found";
+						}
+						args.push(arg);
+						let commaToken = tokens.next();
+						if (commaToken.type == ",") {
+							continue;
+						}
+						else if (commaToken.type == ")") {
+							break;
+						}
+						else {
+							throw "Expected ',' or ')' but found '" + commaToken.type + "'";
+						}
 					}
-					args.push(arg);
-					let commaToken = tokens.next();
-					if (commaToken.type == ",") {
-						continue;
-					}
-					else if (commaToken.type == ")") {
-						break;
-					}
-					else {
-						throw "Expected ',' or ')' but found '" + commaToken.type + "'";
-					}
+					expr = new Expr("function-call", {func: expr, args: args});
 				}
-				expr = new Expr("function-call", {func: expr, args: args});
+				else if (type == ".") { // parse object field expr
+					let fieldName = variableName(tokens);
+					if (!fieldName) {
+						throw "Expected field name but none found";
+					}
+					expr = new Expr("object-field", {object: expr, field: fieldName.data});
+				}
 			}
 			tokens.restore(); // undo last request of token because it was not a '('
 			return expr;
@@ -275,25 +286,25 @@ const SimpleParser = (() => {
 		/*
 			Attempts to parse a multiplication, division, or modulo expression
 			An Multiplication, Division, or Modulo Expression is one of:
-				Function Call Expression,
+				Function Call or Object Field Expression,
 				{
-					left: Function Call Expression,
-					right: Function Call Expression
+					left: Function Call or Object Field Expression,
+					right: Function Call or Object Field Expression
 				},
 				{
 					left: Multiplication, Division, or Modulo Expression,
-					right: Function Call Expression
+					right: Function Call or Object Field Expression
 				} 
 			Note: parses as many as possible if in sequence, giving precedence (closer to leaves of expr tree) to operators the occur first when read left to right
 			@param tokens - TokenStream - the token stream
 			@return Expr? - the expr if the token stream matches an multiplication, division, or modulo expr, otherwise false
 		*/
 		function mulDivMod(tokens) {
-			let expr = functionCall(tokens);
+			let expr = functionCallOrObjectField(tokens);
 			let op;
 			tokens.save(); // save before the first operator token request in case it is not and operator
 			while (["*", "/", "%"].indexOf((op = tokens.next().type)) > -1) {
-				let rhs = functionCall(tokens); // right-hand side
+				let rhs = functionCallOrObjectField(tokens); // right-hand side
 				expr = new Expr(op, {left: expr, right: rhs});
 				tokens.save(); // in case next token is not one of '*', '/', '%'
 			}
@@ -329,8 +340,6 @@ const SimpleParser = (() => {
 			tokens.restore(); // undo the last next token request because it was not an operator
 			return expr;
 		}
-
-		//TODO add object field expr
 
 		/*
 			Attempts to parse an expr from the given token stream
@@ -458,7 +467,7 @@ const SimpleParser = (() => {
 
 var result = SimpleParser.parse(`
 
-x = 10 + g(x, y)(z)*4
+x = 10 + g(x, y)(z)*4 + window.getBounds(100, 200).width
 
 `);
 
