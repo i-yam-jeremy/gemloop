@@ -19,6 +19,8 @@ const SimpleParser = (() => {
 			")": /^\)/,
 			"[": /^\[/,
 			"]": /^\]/,
+			"{": /^\{/,
+			"}": /^\}/,
 			"+": /^\+/,
 			"-": /^\-/,
 			"/": /^\//,
@@ -232,11 +234,76 @@ const SimpleParser = (() => {
 		}
 
 		/*
+			Attempts to parse a lambda expression
+			A Lambda Expression is one of:
+				Atomic Expression,
+				() => { Statement* }
+			@param tokens - TokenStream - the token stream
+			@return Expr? - the expr if it matches a lambda expr, otherwise false
+		*/
+		function lambda(tokens) {
+			tokens.save();
+			let paramNames = [];
+			let firstToken = tokens.next();
+			if (firstToken.type == "identifier") { // for single parameter function with no parentheses
+				paramNames.push(firstToken.value);
+			}
+			else if (firstToken.type == "(") { // parentheses with multiple args
+				while (true) {
+					let paramToken = tokens.next();
+					if (paramToken.type == "identifier") {
+						paramNames.push(paramToken.value);
+					}
+					else if (paramNames.length == 0 && paramToken.type == ")") { // to support functions with 0 arguments
+						break;
+					}
+
+					let separatorToken = tokens.next();
+					if (separatorToken.type == ",") {
+						continue;
+					}
+					else if (separatorToken.type == ")") {
+						break;
+					}
+					else {
+						throw "Expected ',' or ')' but found '" + separatorToken.type + "'";
+					}
+				}
+			}
+			else {
+				tokens.restore();
+				return atom(tokens);
+			}
+
+
+			let body = []; // an array of statements
+			if (tokens.next().type == "{") {
+				while (tokens.save(), tokens.next().type != "}") { // save so if "}" is not found it can be undone to correctly read statement
+					tokens.restore(); // token was not "}" so restore and read statement
+					console.log(tokens);
+					let statement = StatementParser.parse(tokens);
+					if (!statement) {
+						throw "Invalid statement";
+					}
+					body.push(statement);
+				}
+				tokens.clearSave(); // token "}" was found so ignore the save
+
+				tokens.clearSave();
+				return new Expr("lambda", {params: paramNames, body: body});
+			}
+			else {
+				tokens.restore();
+				return atom(tokens);
+			}
+		}
+
+		/*
 			Attempts to parse a function call or object field expression
 			A Function Call or Object Field Expression is one of:
-				Atomic Expression,
+				Lambda Expression,
 				{
-					func: Atomic Expression,
+					func: Lambda Expression,
 					args: Expression[]
 				},
 				{
@@ -249,7 +316,7 @@ const SimpleParser = (() => {
 		*/
 		function functionCallOrObjectField(tokens) {
 			tokens.save();
-			let expr = atom(tokens);
+			let expr = lambda(tokens);
 			if (!expr) {
 				tokens.restore();
 				return false;
@@ -402,7 +469,7 @@ const SimpleParser = (() => {
 			tokens.save();
 			let lhs = ExprParser.parse(tokens); // left-hand side
 			let equalsToken = tokens.next();
-			if (equalsToken.type != "=") {
+			if (!lhs || equalsToken.type != "=") {
 				tokens.restore();
 				return false;
 			}
@@ -480,7 +547,9 @@ const SimpleParser = (() => {
 
 var result = SimpleParser.parse(`
 
-1 + g(100)
+(a, b) { 
+	x = 10	
+}
 
 `);
 
