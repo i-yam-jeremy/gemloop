@@ -30,6 +30,8 @@ const SimpleParser = (() => {
 			">": /^\>/,
 			".": /^\./,
 			",": /^\,/,
+			":": /^\:/,
+			";": /^\;/,
 			"!": /^\!/,
 			"=": /^\=/,
 			"\\": /^\\/,
@@ -290,8 +292,9 @@ const SimpleParser = (() => {
 					else if (separatorToken.type == ")") {
 						break;
 					}
-					else {
-						throw "Expected ',' or ')' but found '" + separatorToken.type + "'";
+					else { // was parenthetical atomic expression, not lambda expression, so restore and parse that instead
+						tokens.restore();
+						return atom(tokens);
 					}
 				}
 			}
@@ -350,6 +353,21 @@ const SimpleParser = (() => {
 		function classDef(tokens) {
 			tokens.save();
 			if (tokens.next().type == "[" && tokens.next().type == "]") { // match initial "[]"
+				let nextToken = tokens.next();
+				let parentClassExpr;
+				if (nextToken.type == ":") {
+					parentClassExpr = parseExpr(tokens);
+					if (!parentClassExpr) {
+						tokens.restore();
+						return lambda(tokens);
+					}
+					nextToken = tokens.next(); // for "{"
+				}
+				
+				if (nextToken.type != "{") {
+					tokens.restore();
+					return lambda(tokens);
+				}
 				let methods = {};
 				while (tokens.save(), tokens.next().type != "}") { // save in case next token is not a "}" so it can be restored and method definition read
 					tokens.restore(); // restore since next token was not "}"
@@ -367,7 +385,7 @@ const SimpleParser = (() => {
 					methods[methodName] = method;
 				}
 				tokens.clearSave(); // matched a "}" so don't need to restore
-				return new Expr("class-def", methods);
+				return new Expr("class-def", {parentClass: parentClassExpr, methods: methods});
 			}
 			else {
 				tokens.restore();
@@ -403,25 +421,32 @@ const SimpleParser = (() => {
 			while (tokens.save(), ["(", "."].indexOf((type = tokens.next().type)) > -1) { // save for when next token is not '(', and loop so multiple function calls can be strung together like f()(x)(y)
 				tokens.clearSave(); // '(' or '.' is valid so don't need to save it because it does not need to be undone later
 				if (type == "(") { // parse function call expr
-					let args = [];
-					while (true) { 
-						let arg = parseExpr(tokens);
-						if (!arg) {
-							throw "Expected argument expression but none found";
-						}
-						args.push(arg);
-						let commaToken = tokens.next();
-						if (commaToken.type == ",") {
-							continue;
-						}
-						else if (commaToken.type == ")") {
-							break;
-						}
-						else {
-							throw "Expected ',' or ')' but found '" + commaToken.type + "'";
-						}
+					tokens.save(); // save in case token is not ")"
+					if (tokens.next().type == ")") { // handle no-argument function calls
+						expr = new Expr("function-call", {func: expr, args: []});	
 					}
-					expr = new Expr("function-call", {func: expr, args: args});
+					else {
+						tokens.restore(); // was not ")" so restore
+						let args = [];
+						while (true) {
+							let arg = parseExpr(tokens);
+							if (!arg) {
+								throw "Expected argument expression but none found";
+							}
+							args.push(arg);
+							let commaToken = tokens.next();
+							if (commaToken.type == ",") {
+								continue;
+							}
+							else if (commaToken.type == ")") {
+								break;
+							}
+							else {
+								throw "Expected ',' or ')' but found '" + commaToken.type + "'";
+							}
+						}
+						expr = new Expr("function-call", {func: expr, args: args});
+					}
 				}
 				else if (type == ".") { // parse object field expr
 					let fieldName = variableName(tokens);
@@ -623,8 +648,7 @@ const SimpleParser = (() => {
 })();
 
 var result = SimpleParser.parse(`
-
-f = <> {
+f = []:a().parentClass {
 	/*
 		this is a multi-line comment
 	*/ 
