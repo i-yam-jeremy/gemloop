@@ -275,12 +275,15 @@ const SimpleParser = (() => {
 				return atom(tokens);
 			}
 
+			if (!(tokens.next().type == "=" && tokens.next().type == ">")) { // if "=>" not found
+				tokens.restore();
+				return atom(tokens);
+			}
 
 			let body = []; // an array of statements
 			if (tokens.next().type == "{") {
 				while (tokens.save(), tokens.next().type != "}") { // save so if "}" is not found it can be undone to correctly read statement
 					tokens.restore(); // token was not "}" so restore and read statement
-					console.log(tokens);
 					let statement = StatementParser.parse(tokens);
 					if (!statement) {
 						throw "Invalid statement";
@@ -507,6 +510,8 @@ const SimpleParser = (() => {
 			}
 		}
 
+		//TODO add return statement, if statement, etc. and plan the design of the language, functional, imperative, what makes it unique / what would I like to use
+
 		/*
 			Attempts to parse a statement of any type
 			@param tokens - TokenStream - the token stream
@@ -547,7 +552,7 @@ const SimpleParser = (() => {
 
 var result = SimpleParser.parse(`
 
-(a, b) { 
+f = (a, b) => { 
 	x = 10	
 }
 
