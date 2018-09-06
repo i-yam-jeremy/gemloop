@@ -32,6 +32,7 @@ const SimpleParser = (() => {
 			",": /^\,/,
 			"!": /^\!/,
 			"=": /^\=/,
+			"\\": /^\\/,
 			"whitespace": /^\s+/
 		};
 
@@ -70,7 +71,7 @@ const SimpleParser = (() => {
 			}
 
 			/*
-				Gets the next token in the token stream
+				Gets the next token in the token stream, skipping whitespace and comments
 				@return Token - the next token in the stream, or a Token with type "EOF" if reached the end of the stream
 			*/
 			next() {
@@ -78,7 +79,33 @@ const SimpleParser = (() => {
 					return new Token("EOF", "");
 				}
 				else {
-					return this.tokens[this.position++];
+					if (this.tokens[this.position].type == "whitespace") {
+						this.position++;
+						return this.next();
+					}
+					else if (this.tokens[this.position].type == "/" && this.tokens[this.position+1] && ["/", "*"].indexOf(this.tokens[this.position+1].type) > -1) { // check if comment
+						if (this.tokens[this.position+1].type == "/") { // single-line comment
+							this.position += 2; // skip "//"
+							while (!(this.position >= this.tokens.length || this.tokens[this.position].value.includes("\n"))) {
+								this.position++;
+							}
+							this.position++; // skip the last whitespace
+						}
+						else if (this.tokens[this.position+1].type == "*") { // multi-line comment
+							this.position += 2; // skip "/*"
+							while (!(this.tokens[this.position].type == "*" && this.tokens[this.position+1] && this.tokens[this.position+1].type == "/")) {
+								if (this.position >= this.tokens.length) {
+									throw "Reached end of file with unclosed multi-line comment";
+								}
+								this.position++;
+							}
+							this.position += 2; // skip the end "*/"
+						}
+						return this.next();
+					}
+					else {
+						return this.tokens[this.position++];
+					}
 				}
 			}
 
@@ -98,8 +125,6 @@ const SimpleParser = (() => {
 			}	
 		}
 
-		//TODO add comments
-
 		/*
 			Converts the input string into a stream of tokens
 			@param s - string - the input string
@@ -113,9 +138,7 @@ const SimpleParser = (() => {
 					let result = TOKEN_REGEXES[tokenType].exec(s);
 					if (result && result[0] != null) {
 						let value = result[0];
-						if (tokenType != "whitespace") {
-							tokens.push(new Token(tokenType, value));
-						}
+						tokens.push(new Token(tokenType, value));
 						foundToken = true;
 						s = s.substring(value.length);
 						break;
@@ -601,12 +624,15 @@ const SimpleParser = (() => {
 
 var result = SimpleParser.parse(`
 
-f = <> { 
+f = <> {
+	/*
+		this is a multi-line comment
+	*/ 
 	x() => {
 		y = 10
 	}
 
-	anotherMethod(a, b, c) => {
+	anotherMethod(a, b, c) => { // does something
 		d = a + b + c
 	}
 }
