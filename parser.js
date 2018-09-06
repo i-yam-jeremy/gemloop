@@ -98,6 +98,8 @@ const SimpleParser = (() => {
 			}	
 		}
 
+		//TODO add comments
+
 		/*
 			Converts the input string into a stream of tokens
 			@param s - string - the input string
@@ -237,7 +239,7 @@ const SimpleParser = (() => {
 			Attempts to parse a lambda expression
 			A Lambda Expression is one of:
 				Atomic Expression,
-				() => { Statement* }
+				"() => {" Statement* "}"
 			@param tokens - TokenStream - the token stream
 			@return Expr? - the expr if it matches a lambda expr, otherwise false
 		*/
@@ -301,12 +303,61 @@ const SimpleParser = (() => {
 			}
 		}
 
+		//TODO add new expression (object constructor)
+
+		/*
+			Attempts to parse a class definition expression
+			A Class Definition Expression is one of:
+				Lambda Expression,
+				"<> {" (Method Definition)* "}"
+			where a Method Definition is:
+				(Method Name) (Lambda Expression)
+			Note: in the above case Lambda Expression must be of type "lambda", it can not be the fall-through atomic case,
+				this is to ensure the method definition is a function and not any arbitrary expression
+			For example:
+				<> {
+					myMethod(param1) => {
+						x = param1*2
+					}
+				}
+			@param tokens - TokenStream - the token stream
+			@return Expr? - an expr if it matches a class definition expr, otherwise false
+
+		*/
+		function classDef(tokens) {
+			tokens.save();
+			if (tokens.next().type == "<" && tokens.next().type == ">" && tokens.next().type == "{") { // match initial "<> {"
+				let methods = {};
+				while (tokens.save(), tokens.next().type != "}") { // save in case next token is not a "}" so it can be restored and method definition read
+					tokens.restore(); // restore since next token was not "}"
+					let methodNameToken = tokens.next();
+					if (methodNameToken.type != "identifier") {
+						tokens.restore();
+						return lambda(tokens);
+					}
+					let methodName = methodNameToken.value;
+					let method = lambda(tokens); // parse lambda expression
+					if (method.type != "lambda") { // if next is not a lambda expression, restore and fall-through since it is not a class definition or there is an error
+						tokens.restore();
+						return lambda(tokens);
+					}
+					methods[methodName] = method;
+				}
+				tokens.clearSave(); // matched a "}" so don't need to restore
+				return new Expr("class-def", methods);
+			}
+			else {
+				tokens.restore();
+				return lambda(tokens);
+			}
+		}
+
 		/*
 			Attempts to parse a function call or object field expression
 			A Function Call or Object Field Expression is one of:
-				Lambda Expression,
+				Class Definition Expression,
 				{
-					func: Lambda Expression,
+					func: Class Definition Expression,
 					args: Expression[]
 				},
 				{
@@ -319,7 +370,7 @@ const SimpleParser = (() => {
 		*/
 		function functionCallOrObjectField(tokens) {
 			tokens.save();
-			let expr = lambda(tokens);
+			let expr = classDef(tokens);
 			if (!expr) {
 				tokens.restore();
 				return false;
@@ -510,8 +561,6 @@ const SimpleParser = (() => {
 			}
 		}
 
-		//TODO add return statement, if statement, etc. and plan the design of the language, functional, imperative, what makes it unique / what would I like to use
-
 		/*
 			Attempts to parse a statement of any type
 			@param tokens - TokenStream - the token stream
@@ -552,8 +601,14 @@ const SimpleParser = (() => {
 
 var result = SimpleParser.parse(`
 
-f = (a, b) => { 
-	x = 10	
+f = <> { 
+	x() => {
+		y = 10
+	}
+
+	anotherMethod(a, b, c) => {
+		d = a + b + c
+	}
 }
 
 `);
