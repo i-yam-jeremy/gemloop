@@ -18,7 +18,7 @@ const SimpleParser = (() => {
 
 		/* The regular expressions for matching tokens */
 		const TOKEN_REGEXES = {
-			"integer": /^[0-9]+/,
+			"number": /^(?:[0-9]*\.[0-9]+)|^(?:[0-9]+)/,
 			"identifier": /^[A-Za-z_][A-Za-z_0-9]*/,
 			"(": /^\(/,
 			")": /^\)/,
@@ -332,12 +332,17 @@ const SimpleParser = (() => {
 			@param tokens - TokenStream - the token stream
 			@return Expr? - the expr if the token stream matches an integer literal expr, otherwise false
 		*/
-		function integerLiteral(tokens) {
+		function numberLiteral(tokens) {
 			tokens.save();
 			let nextToken = tokens.next();
-			if (nextToken.type == "integer") {
+			if (nextToken.type == "number") {
 				tokens.clearSave();
-				return new Expr("literal", parseInt(nextToken.value));
+				if (nextToken.value.includes(".")) {
+					return new Expr("literal", parseFloat(nextToken.value));
+				}
+				else {
+					return new Expr("literal", parseInt(nextToken.value));
+				}
 			}
 			else {
 				tokens.restore();
@@ -393,7 +398,7 @@ const SimpleParser = (() => {
 			@return Expr? - the expr if the token stream matches an atomic expr, otherwise false
 		*/
 		function atom(tokens) {
-			let exprParsers = [parentheses, integerLiteral, stringLiteral, variableName];
+			let exprParsers = [parentheses, numberLiteral, stringLiteral, variableName];
 			for (let parser of exprParsers) {
 				let expr = parser(tokens);
 				if (expr) {
@@ -797,9 +802,8 @@ const SimpleParser = (() => {
 })();
 
 var result = SimpleParser.parse(`
-string = "Hello world!",
-anotherString = 'hi'
-
+anInt = 108,
+aFloat = 109.34
 `);
 
 console.log(result);
