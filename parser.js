@@ -43,6 +43,8 @@ const SimpleParser = (() => {
 			"!": /^\!/,
 			"=": /^\=/,
 			"\\": /^\\/,
+			"|": /^\|/,
+			"&": /^\|/,
 			"whitespace": /^\s+/
 		};
 
@@ -709,7 +711,7 @@ const SimpleParser = (() => {
 		
 		/*
 			Attempts to parse a comparison expression
-			An Addition or Subtraction Expression is one of:
+			A Comparison Expression is one of:
 				Addition or Subtraction Expression,
 				{
 					left: Addition or Subtraction Expression,
@@ -736,9 +738,37 @@ const SimpleParser = (() => {
 		}
 
 		/*
+			Attempts to parse a logical operator expression
+			A Logical Operator Expression is one of:
+				Comparison Expression,
+				{
+					left: Comparison Expression,
+					right: Comparison Expression
+				},
+				{
+					left: Logical Operator Expression,
+					right: Comparison Expression
+				} 
+			Note: parses as many as possible if in sequence, giving precedence (closer to leaves of expr tree) to operators the occur first when read left to right
+			@param tokens - TokenStream - the token stream
+			@return Expr? - the expr if the token stream matches a logical operator expr, otherwise false
+		*/
+		function logicalOp(tokens) {
+			let expr = comparison(tokens);
+			let op;
+			while (tokens.save(), ["&&", "||"].indexOf((op = tokens.next().type+tokens.next().type)) > -1) { // save before the operator token request in case it is not one of the valid operators
+				tokens.clearSave(); // it is a valid operator so save can be cleared
+				let rhs = comparison(tokens); // right-hand side
+				expr = new Expr(op, {left: expr, right: rhs});
+			}
+			tokens.restore(); // undo the last next token request because it was not an operator
+			return expr;
+		}
+
+		/*
 			Attempts to parse an if expression
 			An If Expression is one of:
-				Comparison Expression,
+				Logical Operator Expression,
 				"if" (Atomic Expression) "{" Expression "}" ("elif" (Atomic Expression) "{" Expression "}")* ("else" "{" Expression "}")?
 			@param tokens - TokenStream - the token stream
 			@return Expr? - the expr if the token stream matches an if expr, otherwise false
@@ -766,12 +796,12 @@ const SimpleParser = (() => {
 					}
 					else {
 						tokens.restore();
-						return comparison(tokens);
+						return logicalOp(tokens);
 					}
 				}
 				else {
 					tokens.restore();
-					return comparison(tokens);
+					return logicalOp(tokens);
 				}
 				
 			}
@@ -781,7 +811,7 @@ const SimpleParser = (() => {
 			}
 			else {
 				tokens.restore();
-				return comparison(tokens);
+				return logicalOp(tokens);
 			}
 		}
 
@@ -997,6 +1027,8 @@ const SimpleInterpreter = (() => {
 		"<=": (e, s) => evalExpr(e.data.left, s) <= evalExpr(e.data.right, s),
 		"!=": (e, s) => evalExpr(e.data.left, s) != evalExpr(e.data.right, s),
 		"==": (e, s) => evalExpr(e.data.left, s) == evalExpr(e.data.right, s),
+		"&&": (e, s) => evalExpr(e.data.left, s) && evalExpr(e.data.right, s),
+		"||": (e, s) => evalExpr(e.data.left, s) || evalExpr(e.data.right, s),
 		"unary-op": (e, s) => {
 			switch (e.data.op) {
 				case "-":
@@ -1106,9 +1138,6 @@ const SimpleInterpreter = (() => {
 
 })();
 
-// TODO add unary boolean operators (!) and logical operators (&&, ||)
-// TODO add unary negative operator
-
 let source = `
 h = -3.7,
 z = -h,
@@ -1119,7 +1148,8 @@ g = <> {
 		}
 		else {
 			this.c = 3
-		}
+		},
+		this.z = h == -3.7 || h == 2
 	}
 	x(a) => {
 		a+2
