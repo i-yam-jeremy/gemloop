@@ -923,6 +923,19 @@ const SimpleInterpreter = (() => {
 				throw "Object field access, expected object but found " + (typeof object);
 			}
 		},
+		"if": (e, s) => {
+			for (let conditional of e.data.conditionals) {
+				if (conditional.condition == undefined) { // else case
+					return evalExpr(conditional.body, s);
+				}
+				else {
+					let condition = evalExpr(conditional.condition, s);
+					if (condition) {
+						return evalExpr(conditional.body, s);
+					}
+				}
+			}
+		},
 		"assignment": (e, s) => {
 			if (e.data.variable.type == "variable") {
 				let value = evalExpr(e.data.value, s);
@@ -934,6 +947,7 @@ const SimpleInterpreter = (() => {
 				let object = evalExpr(e.data.variable.data.object, s);
 				let field = e.data.variable.data.field;
 				object[field] = value;
+				return value;
 			}
 		},
 		"joint": (e, s) => {
@@ -984,8 +998,11 @@ let source = `
 h = true,
 g = <> {
 	init() => {
-		if h {
+		this.d = if h {
 			this.a = 10
+		}
+		else {
+			this.c = 3
 		}
 	}
 	x(a) => {
