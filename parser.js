@@ -13,7 +13,8 @@ const SimpleParser = (() => {
 
 		/* The reserved keywords that cannot be used as identifiers */
 		const KEYWORDS = [
-			"if", "elif", "else"
+			"if", "elif", "else",
+			"true", "false"
 		];
 
 		/* The regular expressions for matching tokens */
@@ -328,10 +329,29 @@ const SimpleParser = (() => {
 			}
 		}
 
+	
 		/*
-			Attempts to parse an integer literal expression
+			Attempts to parse a boolean literal expression
 			@param tokens - TokenStream - the token stream
-			@return Expr? - the expr if the token stream matches an integer literal expr, otherwise false
+			@return Expr? - the expr if the token stream matches a boolean literal expr, otherwise false
+		*/
+		function booleanLiteral(tokens) {
+			tokens.save();
+			let nextToken = tokens.next();
+			if (nextToken.type == "keyword" && ["true", "false"].indexOf(nextToken.value) > -1) {
+				tokens.clearSave();
+				return new Expr("literal", nextToken.value == "true");
+			}
+			else {
+				tokens.restore();
+				return false;
+			}
+		}
+		
+		/*
+			Attempts to parse a number literal expression
+			@param tokens - TokenStream - the token stream
+			@return Expr? - the expr if the token stream matches a number literal expr, otherwise false
 		*/
 		function numberLiteral(tokens) {
 			tokens.save();
@@ -399,7 +419,7 @@ const SimpleParser = (() => {
 			@return Expr? - the expr if the token stream matches an atomic expr, otherwise false
 		*/
 		function atom(tokens) {
-			let exprParsers = [parentheses, numberLiteral, stringLiteral, variableName];
+			let exprParsers = [parentheses, booleanLiteral, numberLiteral, stringLiteral, variableName];
 			for (let parser of exprParsers) {
 				let expr = parser(tokens);
 				if (expr) {
@@ -961,6 +981,7 @@ const SimpleInterpreter = (() => {
 
 
 let source = `
+h = true,
 g = <> {
 	init() => {
 		if h {
