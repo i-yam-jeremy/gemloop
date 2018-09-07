@@ -830,14 +830,36 @@ const SimpleParser = (() => {
 */
 const SimpleInterpreter = (() => {
 
+	/*
+		A function object in the language
+	*/
 	class Func {
 		
+		/*
+			Fields:
+
+			params - string[] - the names of this function's parameters
+			body - Expr - the body of the function
+			scope - Scope - the scope in which the function was defined
+		*/
+
+		/*
+			Creates a function from the given parameters, body, and scope
+			@param params - string[] - the names of this function's parameters
+			@param body - Expr - the body of the function
+			@param scope - Scope - the scope in which the function was defined
+		*/
 		constructor(params, body, scope) {
 			this.params = params;
 			this.body = body;
 			this.scope = scope;
 		}
 
+		/*
+			Evaluates this function with the given arguments
+			@param args - any[] - the arguments to be passed to the function
+			@return any - the result of calling the function
+		*/
 		call(args) {
 			if (this.params.length != args.length) {
 				throw "Expected " + this.params.length + " arguments but found " + args.length;
@@ -850,13 +872,37 @@ const SimpleInterpreter = (() => {
 		}
 	}
 
+	/*
+		A class definition in the language
+		Note: this is not an instance of the class, it is the definition of the class
+	*/
 	class Class {
+
+		/*
+			Fields:
+
+			parentClass - Class (Optional) - the parent class if there is one, otherwise undefined
+			methods - Map<string, Lambda Expression> - method names mapped to the methods
+			scope - Scope - the scope in which this class was defined
+		*/
+
+		/*
+			Creates a class definition from the given parentClass, methods, and scope
+			@param parentClass - Class (Optional) - the parent class if there is one, otherwise undefined
+			@param methods - Map<string, Lambda Expression> - method names mapped to the methods
+			@param scope - Scope - the scope in which this class was defined
+		*/
 		constructor(parentClass, methods, scope) {
 			this.parentClass = parentClass;
 			this.methods = methods;
 			this.scope = scope;
 		}
 
+		/*
+			Instantiates and object that is an instance of this class
+			@param args - any[] - the arguments to the constructor (the init method)
+			@return - object - an object that is an instance of this class
+		*/
 		instantiate(args) {
 			let instance = {};
 			let clazz = this;
@@ -993,6 +1039,7 @@ const SimpleInterpreter = (() => {
 
 })();
 
+// TODO add boolean exprs
 
 let source = `
 h = true,
