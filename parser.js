@@ -329,8 +329,6 @@ const SimpleParser = (() => {
 			}
 		}
 
-		//TODO add new expression (object constructor)
-
 		/*
 			Attempts to parse a class definition expression
 			A Class Definition Expression is one of:
@@ -518,12 +516,34 @@ const SimpleParser = (() => {
 		}
 
 		/*
+			Attempts to parse a joint expression
+			A Joint Expression is:
+				(Addition or Subtraction Expression) ("," Addition Or Subtraction Expression)*
+			Note: the value of the joint expr is the value of the last expression
+			@param tokens - TokenStream - the stream of tokens
+			@return Expr? - the expr if the token stream matches a joint expr, otherwise false
+		*/
+		function jointExpression(tokens) {
+			let expr = addSub(tokens);
+			while (tokens.save(), tokens.next().type == ",") { // save in case token is not ","
+				tokens.clearSave(); // the token was "," so no need to restore
+				let nextExpr = addSub(tokens);
+				if (!nextExpr) {
+					throw "Expected another expression but found none";
+				}
+				expr = new Expr("joint", {left: expr, right: nextExpr});
+			}
+			tokens.restore(); // restore since last token was not ","
+			return expr;
+		}
+
+		/*
 			Attempts to parse an expr from the given token stream
 			@param tokens - TokenStream - the token stream
 			@return Expr? - the expr if the token stream matches an expr, otherwise false
 		*/
 		function parseExpr(tokens) {
-			return addSub(tokens);
+			return jointExpression(tokens);
 		}
 
 		return {
@@ -659,7 +679,7 @@ f = []:a().parentClass {
 	anotherMethod(a, b, c) => { // does something
 		d = a + b + c
 	}
-}
+}, 10, x+1
 
 `);
 
