@@ -185,6 +185,7 @@ const SimpleParser = (() => {
 				let token = this.tokens[this.position];
 				if (token.type == "identifier" && KEYWORDS.indexOf(token.value) > -1) {
 					preprocessedTokens.push(new Token("keyword", token.value));
+					this.position++;
 					return true;
 				}
 				return false;
@@ -962,7 +963,9 @@ const SimpleInterpreter = (() => {
 let source = `
 g = <> {
 	init() => {
-		this.a = 10
+		if h {
+			this.a = 10
+		}
 	}
 	x(a) => {
 		a+2
