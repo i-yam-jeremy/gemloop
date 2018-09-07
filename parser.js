@@ -430,9 +430,34 @@ const SimpleParser = (() => {
 		}
 
 		/*
+			Attempts to parse a unary operator expression
+			A Unary Operator Expression is one of:
+				Atomic Expression,
+				"-" (Atomic Expression),
+				"!" (Atomic Expression)
+			@param tokens - TokenStream - the stream of tokens
+			@return Expr? - the expr if it matches a unary operator expr, otherwise false
+		*/
+		function unaryOp(tokens) {
+			tokens.save();
+			let token = tokens.next();
+			if (["-", "!"].indexOf(token.type) > -1) {
+				let expr = atom(tokens);
+				if (!expr) {
+					throw "Expected expression but found none";
+				}
+				return new Expr("unary-op", {expr: expr, op: token.type});
+			}
+			else {
+				tokens.restore();
+				return atom(tokens);
+			}
+		}
+
+		/*
 			Attempts to parse a lambda expression
 			A Lambda Expression is one of:
-				Atomic Expression,
+				Unary Operator Expression,
 				"() => {" Expression "}"
 			@param tokens - TokenStream - the token stream
 			@return Expr? - the expr if it matches a lambda expr, otherwise false
@@ -463,18 +488,18 @@ const SimpleParser = (() => {
 					}
 					else { // was parenthetical atomic expression, not lambda expression, so restore and parse that instead
 						tokens.restore();
-						return atom(tokens);
+						return unaryOp(tokens);
 					}
 				}
 			}
 			else {
 				tokens.restore();
-				return atom(tokens);
+				return unaryOp(tokens);
 			}
 
 			if (!(tokens.next().type == "=" && tokens.next().type == ">")) { // if "=>" not found
 				tokens.restore();
-				return atom(tokens);
+				return unaryOp(tokens);
 			}
 
 			if (tokens.next().type == "{") {
@@ -488,12 +513,12 @@ const SimpleParser = (() => {
 				}
 				else {
 					tokens.restore();
-					return atom(tokens);
+					return unaryOp(tokens);
 				}
 			}
 			else {
 				tokens.restore();
-				return atom(tokens);
+				return unaryOp(tokens);
 			}
 		}
 
@@ -972,6 +997,14 @@ const SimpleInterpreter = (() => {
 		"<=": (e, s) => evalExpr(e.data.left, s) <= evalExpr(e.data.right, s),
 		"!=": (e, s) => evalExpr(e.data.left, s) != evalExpr(e.data.right, s),
 		"==": (e, s) => evalExpr(e.data.left, s) == evalExpr(e.data.right, s),
+		"unary-op": (e, s) => {
+			switch (e.data.op) {
+				case "-":
+					return -evalExpr(e.data.expr, s);
+				case "!":
+					return !evalExpr(e.data.expr, s);
+			}
+		},
 		"lambda": (e, s) => {
 			let newScope = Object.assign({}, s);
 			return new Func(e.data.params, e.data.body, newScope);
@@ -1078,6 +1111,7 @@ const SimpleInterpreter = (() => {
 
 let source = `
 h = -3.7,
+z = -h,
 g = <> {
 	init() => {
 		this.d = if (h != 10) {
