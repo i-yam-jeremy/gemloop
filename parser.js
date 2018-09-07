@@ -14,7 +14,8 @@ const SimpleParser = (() => {
 		/* The regular expressions for matching tokens */
 		const TOKEN_REGEXES = {
 			"integer": /^[0-9]+/,
-			"identifier": /^[A-Za-z_][A-Za-z_0-9]*/,
+			"identifier": /^(?!if|elif|else)[A-Za-z_][A-Za-z_0-9]*/,
+			"keyword": /^(?:if|elif|else)/,
 			"(": /^\(/,
 			")": /^\)/,
 			"[": /^\[/,
@@ -264,7 +265,7 @@ const SimpleParser = (() => {
 			Attempts to parse a lambda expression
 			A Lambda Expression is one of:
 				Atomic Expression,
-				"() => {" Statement* "}"
+				"() => {" Expression "}"
 			@param tokens - TokenStream - the token stream
 			@return Expr? - the expr if it matches a lambda expr, otherwise false
 		*/
@@ -515,17 +516,68 @@ const SimpleParser = (() => {
 		}
 
 		/*
+			Attempts to parse an if expression
+			An If Expression is one of:
+				Addition or Subtraction Expression,
+				"if" (Atomic Expression) "{" Expression "}" ("elif" (Atomic Expression) "{" Expression "}")* ("else" "{" Expression "}")?
+			@param tokens - TokenStream - the token stream
+			@return Expr? - the expr if the token stream matches an if expr, otherwise false
+		*/
+		function ifElse(tokens) {
+			tokens.save();
+			let conditionals = [];
+			let keyword;
+			console.log(tokens);
+			while (tokens.save(), keyword = tokens.next(), keyword.type == "keyword" &&
+				((conditionals.length == 0 && keyword.value == "if") ||
+				 (conditionals.length > 0 && ["elif", "else"].indexOf(keyword.value) > -1))) {
+				tokens.clearSave(); // keyword matched so no need to restore
+				let conditionExpr = null;
+				if (["if", "elif"].indexOf(keyword.value) > -1) {
+					conditionExpr = atom(tokens);
+				}
+
+				if (tokens.next().type == "{") {
+					let body = parseExpr(tokens);
+					if (!body) {
+						throw "Expected if-expression body but found none";
+					}
+					if (tokens.next().type == "}") {
+						conditionals.push({condition: conditionExpr, body: body});
+					}
+					else {
+						tokens.restore();
+						return addSub(tokens);
+					}
+				}
+				else {
+					tokens.restore();
+					return addSub(tokens);
+				}
+				
+			}
+			tokens.restore(); // restore last unmatched keyword attempt
+			if (conditionals.length > 0) {
+				return new Expr("if", {conditionals: conditionals});
+			}
+			else {
+				tokens.restore();
+				return addSub(tokens);
+			}
+		}
+
+		/*
 			Attempts to parse an assignment expression
 			An Assignment Expression is one of:
-				Addition or Subtraction Expression,
-				Variable Expression "=" Expression
+				If Expression,
+				Variable Expression "=" If Expression
 			Note: the value of an assignment expr is the value of the right-hand side expression
 			@param tokens - TokenStream - the token stream
 			@return Expr? - the expr if the token stream matches an assignment expr, otherwise false
 		*/
 		function assignment(tokens) {
 			tokens.save();
-			let lhs = addSub(tokens); // left-hand side
+			let lhs = ifElse(tokens); // left-hand side
 			if (!lhs) {
 				tokens.restore();
 				return false;
@@ -535,16 +587,16 @@ const SimpleParser = (() => {
 			}
 			if (tokens.next().type != "=") {
 				tokens.restore();
-				return addSub(tokens);
+				return ifElse(tokens);
 			}
-			let rhs = parseExpr(tokens); // right-hand side
+			let rhs = assignment(tokens); // right-hand side
 			if (rhs) { 
 				tokens.clearSave();
 				return new Expr("assignment", {variable: lhs, value: rhs});
 			}
 			else {
 				tokens.restore();
-				return addSub(tokens);
+				return ifElse(tokens);
 			}
 		}
 
@@ -603,6 +655,14 @@ const SimpleParser = (() => {
 })();
 
 var result = SimpleParser.parse(`
+h = if a { 10  }
+elif (g().a) {
+	y = b+3
+}
+else {
+	x = 10
+},
+g = 10,
 f = ([]:a().parentClass {
 	/*
 		this is a multi-line comment
