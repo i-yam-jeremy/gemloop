@@ -19,7 +19,7 @@ const SimpleParser = (() => {
 
 		/* The regular expressions for matching tokens */
 		const TOKEN_REGEXES = {
-			"number": /^(?:[0-9]*\.[0-9]+)|^(?:[0-9]+)/,
+			"number": /^(?:-?[0-9]*\.[0-9]+)|^(?:-?[0-9]+)/,
 			"identifier": /^[A-Za-z_][A-Za-z_0-9]*/,
 			"(": /^\(/,
 			")": /^\)/,
@@ -1074,13 +1074,14 @@ const SimpleInterpreter = (() => {
 })();
 
 // TODO add unary boolean operators (!) and logical operators (&&, ||)
+// TODO add unary negative operator
 
 let source = `
-h = 3,
+h = -3.7,
 g = <> {
 	init() => {
 		this.d = if (h != 10) {
-			this.a = 10
+			this.a = -10
 		}
 		else {
 			this.c = 3
