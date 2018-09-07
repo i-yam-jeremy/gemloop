@@ -33,6 +33,8 @@ const SimpleParser = (() => {
 			",": /^\,/,
 			":": /^\:/,
 			";": /^\;/,
+			"\"": /^\"/,
+			"'": /^\'/,
 			"!": /^\!/,
 			"=": /^\=/,
 			"\\": /^\\/,
@@ -85,6 +87,43 @@ const SimpleParser = (() => {
 					if (this.tokens[this.position].type == "whitespace") {
 						this.position++;
 						return this.next();
+					}
+					else if (["'", "\""].indexOf(this.tokens[this.position].type) > -1) { // string
+						let quoteType = this.tokens[this.position].type;
+						this.position++; // skip initial ' or "
+						let escaped = false;
+						let stringValue = [];
+						while (this.tokens[this.position].type != quoteType || escaped) {
+							if (!escaped && this.tokens[this.position].type == "\\") {
+								escaped = true;
+							}
+							else {
+								if (escaped) {
+									escaped = false;
+									const escapeChars = {
+										"n": "\n",
+										"r": "\r",
+										"t": "\t",
+										"'": "'",
+										"\"": "\"",
+										"\\": "\\"
+									};
+									let escapeChar = this.tokens[this.position].value;
+									if (escapeChar in escapeChars) {
+										stringValue += escapeChars[escapeChar];
+									}
+									else {
+										throw "Invalid escape char: " + escapeChar;
+									}
+								}
+								else {
+									stringValue += this.tokens[this.position].value;
+								}
+							}
+							this.position++;
+						}
+						this.position++; // skip end quote
+						return new Token("string", stringValue); 
 					}
 					else if (this.tokens[this.position].type == "/" && this.tokens[this.position+1] && ["/", "*"].indexOf(this.tokens[this.position+1].type) > -1) { // check if comment
 						if (this.tokens[this.position+1].type == "/") { // single-line comment
@@ -220,6 +259,24 @@ const SimpleParser = (() => {
 				return false;
 			}
 		}
+		
+		/*
+			Attempts to parse a string literal expression
+			@param tokens - TokenStream - the token stream
+			@return Expr? - the expr if the token stream matches an string literal expr, otherwise false
+		*/
+		function stringLiteral(tokens) {
+			tokens.save();
+			let nextToken = tokens.next();
+			if (nextToken.type == "string") {
+				tokens.clearSave();
+				return new Expr("literal", nextToken.value);
+			}
+			else {
+				tokens.restore();
+				return false;
+			}
+		}
 
 		/*
 			Attempts to parse a variable name expression (a non-keyword identifier)
@@ -251,7 +308,7 @@ const SimpleParser = (() => {
 			@return Expr? - the expr if the token stream matches an atomic expr, otherwise false
 		*/
 		function atom(tokens) {
-			let exprParsers = [parentheses, integerLiteral, variableName];
+			let exprParsers = [parentheses, integerLiteral, stringLiteral, variableName];
 			for (let parser of exprParsers) {
 				let expr = parser(tokens);
 				if (expr) {
@@ -527,7 +584,6 @@ const SimpleParser = (() => {
 			tokens.save();
 			let conditionals = [];
 			let keyword;
-			console.log(tokens);
 			while (tokens.save(), keyword = tokens.next(), keyword.type == "keyword" &&
 				((conditionals.length == 0 && keyword.value == "if") ||
 				 (conditionals.length > 0 && ["elif", "else"].indexOf(keyword.value) > -1))) {
@@ -655,26 +711,8 @@ const SimpleParser = (() => {
 })();
 
 var result = SimpleParser.parse(`
-h = if a { 10  }
-elif (g().a) {
-	y = b+3
-}
-else {
-	x = 10
-},
-g = 10,
-f = ([]:a().parentClass {
-	/*
-		this is a multi-line comment
-	*/ 
-	x() => {
-		y = 10
-	}
-
-	anotherMethod(a, b, c) => { // does something
-		d = a + b + c
-	}
-}, 10, x+2)
+string = "Hello world!",
+anotherString = 'hi'
 
 `);
 
