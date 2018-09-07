@@ -1137,28 +1137,3 @@ const SimpleInterpreter = (() => {
 	};
 
 })();
-
-let source = `
-h = -3.7,
-z = -h,
-g = <> {
-	init() => {
-		this.d = if (h != 10) {
-			this.a = -10
-		}
-		else {
-			this.c = 3
-		},
-		this.z = h == -3.7 || h == 2
-	}
-	x(a) => {
-		a+2
-	}
-},
-g()
-`;
-let result = SimpleParser.parse(source);
-
-console.log(result);
-
-console.log(SimpleInterpreter.run(source));
