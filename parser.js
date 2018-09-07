@@ -681,11 +681,39 @@ const SimpleParser = (() => {
 			tokens.restore(); // undo the last next token request because it was not an operator
 			return expr;
 		}
+		
+		/*
+			Attempts to parse a comparison expression
+			An Addition or Subtraction Expression is one of:
+				Addition or Subtraction Expression,
+				{
+					left: Addition or Subtraction Expression,
+					right: Addition or Subtraction Expression
+				},
+				{
+					left: Comparison Expression,
+					right: Addition or Subtraction Expression
+				} 
+			Note: parses as many as possible if in sequence, giving precedence (closer to leaves of expr tree) to operators the occur first when read left to right
+			@param tokens - TokenStream - the token stream
+			@return Expr? - the expr if the token stream matches a comparison expr, otherwise false
+		*/
+		function comparison(tokens) {
+			let expr = addSub(tokens);
+			let op;
+			while (tokens.save(), ["<", ">"].indexOf((op = tokens.next().type)) > -1 || ["<=", ">=", "!=", "=="].indexOf((op += tokens.next().type)) > -1) { // save before the operator token request in case it is not one of the valid operators
+				tokens.clearSave(); // it is a valid operator so save can be cleared
+				let rhs = addSub(tokens); // right-hand side
+				expr = new Expr(op, {left: expr, right: rhs});
+			}
+			tokens.restore(); // undo the last next token request because it was not an operator
+			return expr;
+		}
 
 		/*
 			Attempts to parse an if expression
 			An If Expression is one of:
-				Addition or Subtraction Expression,
+				Comparison Expression,
 				"if" (Atomic Expression) "{" Expression "}" ("elif" (Atomic Expression) "{" Expression "}")* ("else" "{" Expression "}")?
 			@param tokens - TokenStream - the token stream
 			@return Expr? - the expr if the token stream matches an if expr, otherwise false
@@ -713,12 +741,12 @@ const SimpleParser = (() => {
 					}
 					else {
 						tokens.restore();
-						return addSub(tokens);
+						return comparison(tokens);
 					}
 				}
 				else {
 					tokens.restore();
-					return addSub(tokens);
+					return comparison(tokens);
 				}
 				
 			}
@@ -728,7 +756,7 @@ const SimpleParser = (() => {
 			}
 			else {
 				tokens.restore();
-				return addSub(tokens);
+				return comparison(tokens);
 			}
 		}
 
@@ -938,6 +966,12 @@ const SimpleInterpreter = (() => {
 		"*": (e, s) => evalExpr(e.data.left, s) * evalExpr(e.data.right, s),
 		"/": (e, s) => evalExpr(e.data.left, s) / evalExpr(e.data.right, s),
 		"%": (e, s) => evalExpr(e.data.left, s) % evalExpr(e.data.right, s),
+		">": (e, s) => evalExpr(e.data.left, s) > evalExpr(e.data.right, s),
+		"<": (e, s) => evalExpr(e.data.left, s) < evalExpr(e.data.right, s),
+		">=": (e, s) => evalExpr(e.data.left, s) >= evalExpr(e.data.right, s),
+		"<=": (e, s) => evalExpr(e.data.left, s) <= evalExpr(e.data.right, s),
+		"!=": (e, s) => evalExpr(e.data.left, s) != evalExpr(e.data.right, s),
+		"==": (e, s) => evalExpr(e.data.left, s) == evalExpr(e.data.right, s),
 		"lambda": (e, s) => {
 			let newScope = Object.assign({}, s);
 			return new Func(e.data.params, e.data.body, newScope);
@@ -1016,7 +1050,7 @@ const SimpleInterpreter = (() => {
 			return EXPR_EVALUATORS[expr.type](expr, scope);
 		}
 		else {
-			throw "Invalid exception type: " + expr.type;
+			throw "Invalid expression type: " + expr.type;
 		}
 	}
 
@@ -1039,13 +1073,13 @@ const SimpleInterpreter = (() => {
 
 })();
 
-// TODO add boolean exprs
+// TODO add unary boolean operators (!) and logical operators (&&, ||)
 
 let source = `
-h = true,
+h = 3,
 g = <> {
 	init() => {
-		this.d = if h {
+		this.d = if (h != 10) {
 			this.a = 10
 		}
 		else {
