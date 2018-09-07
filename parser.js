@@ -475,13 +475,13 @@ const SimpleParser = (() => {
 			Attempts to parse a class definition expression
 			A Class Definition Expression is one of:
 				Lambda Expression,
-				"[]" (":" Expression)? "{" (Method Definition)* "}"
+				"<>" (":" Expression)? "{" (Method Definition)* "}"
 			where a Method Definition is:
 				(Method Name) (Lambda Expression)
 			Note: in the above case Lambda Expression must be of type "lambda", it can not be the fall-through atomic case,
 				this is to ensure the method definition is a function and not any arbitrary expression
 			For example:
-				[]:parentClass {
+				<>:parentClass {
 					myMethod(param1) => {
 						x = param1*2
 					}
@@ -492,7 +492,7 @@ const SimpleParser = (() => {
 		*/
 		function classDef(tokens) {
 			tokens.save();
-			if (tokens.next().type == "[" && tokens.next().type == "]") { // match initial "[]"
+			if (tokens.next().type == "<" && tokens.next().type == ">") { // match initial "<>"
 				let nextToken = tokens.next();
 				let parentClassExpr;
 				if (nextToken.type == ":") {
