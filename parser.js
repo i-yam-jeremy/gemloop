@@ -756,17 +756,22 @@ const SimpleParser = (() => {
 			@return Expr? - the expr if the token stream matches a joint expr, otherwise false
 		*/
 		function jointExpression(tokens) {
-			let expr = assignment(tokens);
+			let exprs = [assignment(tokens)];
 			while (tokens.save(), tokens.next().type == ",") { // save in case token is not ","
 				tokens.clearSave(); // the token was "," so no need to restore
 				let nextExpr = assignment(tokens);
 				if (!nextExpr) {
 					throw "Expected another expression but found none";
 				}
-				expr = new Expr("joint", {left: expr, right: nextExpr});
+				exprs.push(nextExpr);
 			}
 			tokens.restore(); // restore since last token was not ","
-			return expr;
+			if (exprs.length > 1) { // if multiple joined expressions
+				return new Expr("joint", {exprs: exprs});
+			}
+			else { // if only one expression, fall-through
+				return exprs[0];
+			}
 		}
 
 		/*
@@ -801,9 +806,81 @@ const SimpleParser = (() => {
 
 })();
 
-var result = SimpleParser.parse(`
-anInt = 108,
-aFloat = 109.34
-`);
+/*
+	Evaluates the code in the simple language
+*/
+const SimpleInterpreter = (() => {
+
+	/*
+		The evaluator functions for each type of expression
+		Each function has the following signature: (Expression, Scope) => any,
+			where scope is a dictionary mapping variable names to values
+	*/
+	const EXPR_EVALUATORS = {
+		"literal": (e, s) => e.data,
+		"variable": (e, s) => s[e.data],
+		"+": (e, s) => evalExpr(e.left, s) + evalExpr(e.right, s),
+		"-": (e, s) => evalExpr(e.left, s) - evalExpr(e.right, s),
+		"*": (e, s) => evalExpr(e.left, s) * evalExpr(e.right, s),
+		"/": (e, s) => evalExpr(e.left, s) / evalExpr(e.right, s),
+		"%": (e, s) => evalExpr(e.left, s) % evalExpr(e.right, s),
+		"assignment": (e, s) => {
+			if (e.data.variable.type == "variable") {
+				let value = evalExpr(e.data.value, s);
+				s[e.data.variable.data] = value;
+				return value;
+			}
+		},
+		"joint": (e, s) => {
+			let result;
+			for (let expr of e.data.exprs) {
+				result = evalExpr(expr, s);
+			}
+			return result;
+		},
+	};
+
+	/*
+		Evaluates an expression and returns the result
+		@param expr - Expr - the expr to evaluate
+		@param scope - Scope - the scope to evaluate in
+		@return any - the result of evaluation	
+	*/
+	function evalExpr(expr, scope) {
+		if (expr.type in EXPR_EVALUATORS) {
+			return EXPR_EVALUATORS[expr.type](expr, scope);
+		}
+		else {
+			throw "Invalid exception type: " + expr.type;
+		}
+	}
+
+	/*
+		Evaluates the given source code
+		@param s - string - the source
+		@return any - the result of evaluation
+	*/
+	function run(s) {
+		let expr = SimpleParser.parse(s);
+		let scope = {};
+		let result = evalExpr(expr, scope);
+		console.log(scope);
+		return result;
+	}
+
+	return {
+		run
+	};
+
+})();
+
+
+let source = `
+x = 103.4,
+y = 10
+`;
+let result = SimpleParser.parse(source);
 
 console.log(result);
+
+console.log(SimpleInterpreter.run(source));
