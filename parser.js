@@ -508,7 +508,6 @@ const SimpleParser = (() => {
 					}
 					nextToken = tokens.next(); // for "{"
 				}
-				
 				if (nextToken.type != "{") {
 					tokens.restore();
 					return lambda(tokens);
@@ -728,11 +727,10 @@ const SimpleParser = (() => {
 				tokens.restore();
 				return false;
 			}
-			if (lhs.type != "variable") { // TODO add object field assignment
+			if (["variable", "object-field"].indexOf(lhs.type) == -1) {
 				return lhs;
 			}
 			if (tokens.next().type != "=") {
-				console.log(tokens);
 				tokens.restore();
 				return ifElse(tokens);
 			}
@@ -811,6 +809,55 @@ const SimpleParser = (() => {
 */
 const SimpleInterpreter = (() => {
 
+	class Func {
+		
+		constructor(params, body, scope) {
+			this.params = params;
+			this.body = body;
+			this.scope = scope;
+		}
+
+		call(args) {
+			if (this.params.length != args.length) {
+				throw "Expected " + this.params.length + " arguments but found " + args.length;
+			}
+			let newScope = Object.assign({}, this.scope);
+			for (let i = 0; i < this.params.length; i++) {
+				newScope[this.params[i]] = args[i];
+			}
+			return evalExpr(this.body, newScope);
+		}
+	}
+
+	class Class {
+		constructor(parentClass, methods, scope) {
+			this.parentClass = parentClass;
+			this.methods = methods;
+			this.scope = scope;
+		}
+
+		instantiate(args) {
+			let instance = {};
+			let clazz = this;
+			while (clazz != undefined) {
+				let newScope = Object.assign({}, clazz.scope);
+				newScope["this"] = instance;
+				for (let methodName in clazz.methods) {
+					let method = clazz.methods[methodName];
+					instance[methodName] = new Func(method.data.params, method.data.body, newScope);
+				}
+				clazz = clazz.parentClass;
+			}
+			if ("init" in instance) {
+				instance.init.call(args);
+			}
+			else {
+				throw "Error no constructor found";
+			}
+			return instance;
+		}
+	}
+
 	/*
 		The evaluator functions for each type of expression
 		Each function has the following signature: (Expression, Scope) => any,
@@ -819,16 +866,53 @@ const SimpleInterpreter = (() => {
 	const EXPR_EVALUATORS = {
 		"literal": (e, s) => e.data,
 		"variable": (e, s) => s[e.data],
-		"+": (e, s) => evalExpr(e.left, s) + evalExpr(e.right, s),
-		"-": (e, s) => evalExpr(e.left, s) - evalExpr(e.right, s),
-		"*": (e, s) => evalExpr(e.left, s) * evalExpr(e.right, s),
-		"/": (e, s) => evalExpr(e.left, s) / evalExpr(e.right, s),
-		"%": (e, s) => evalExpr(e.left, s) % evalExpr(e.right, s),
+		"+": (e, s) => evalExpr(e.data.left, s) + evalExpr(e.data.right, s),
+		"-": (e, s) => evalExpr(e.data.left, s) - evalExpr(e.data.right, s),
+		"*": (e, s) => evalExpr(e.data.left, s) * evalExpr(e.data.right, s),
+		"/": (e, s) => evalExpr(e.data.left, s) / evalExpr(e.data.right, s),
+		"%": (e, s) => evalExpr(e.data.left, s) % evalExpr(e.data.right, s),
+		"lambda": (e, s) => {
+			let newScope = Object.assign({}, s);
+			return new Func(e.data.params, e.data.body, newScope);
+		},
+		"class-def": (e, s) => {
+			return new Class(e.data.parentClass, e.data.methods, s);
+		},
+		"function-call": (e, s) => {
+			let func = evalExpr(e.data.func, s);
+			let argValues = e.data.args.map(argExpr => evalExpr(argExpr, s));
+			if (typeof func == "object" && func.constructor == Func) {
+				return func.call(argValues);
+			}
+			else if (typeof func == "object" && func.constructor == Class) {
+				let clazz = func;
+				return clazz.instantiate(argValues);
+			}
+			else {
+				throw "Expected function for function call but found other type";
+			}
+		},
+		"object-field": (e, s) => {
+			let object = evalExpr(e.data.object, s);
+			if (typeof object == "object") {
+				return object[e.data.field];
+			}
+			else {
+				console.error("Test");
+				throw "Object field access, expected object but found " + (typeof object);
+			}
+		},
 		"assignment": (e, s) => {
 			if (e.data.variable.type == "variable") {
 				let value = evalExpr(e.data.value, s);
 				s[e.data.variable.data] = value;
 				return value;
+			}
+			else if (e.data.variable.type == "object-field") {
+				let value = evalExpr(e.data.value, s);
+				let object = evalExpr(e.data.variable.data.object, s);
+				let field = e.data.variable.data.field;
+				object[field] = value;
 			}
 		},
 		"joint": (e, s) => {
@@ -876,8 +960,15 @@ const SimpleInterpreter = (() => {
 
 
 let source = `
-x = 103.4,
-y = 10
+g = <> {
+	init() => {
+		this.a = 10
+	}
+	x(a) => {
+		a+2
+	}
+},
+g()
 `;
 let result = SimpleParser.parse(source);
 
