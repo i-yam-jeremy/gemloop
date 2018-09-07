@@ -308,20 +308,19 @@ const SimpleParser = (() => {
 				return atom(tokens);
 			}
 
-			let body = []; // an array of statements
 			if (tokens.next().type == "{") {
-				while (tokens.save(), tokens.next().type != "}") { // save so if "}" is not found it can be undone to correctly read statement
-					tokens.restore(); // token was not "}" so restore and read statement
-					let statement = StatementParser.parse(tokens);
-					if (!statement) {
-						throw "Invalid statement";
-					}
-					body.push(statement);
+				let body = parseExpr(tokens);
+				if (!body) {
+					throw "No lambda expression body found";
 				}
-				tokens.clearSave(); // token "}" was found so ignore the save
-
-				tokens.clearSave();
-				return new Expr("lambda", {params: paramNames, body: body});
+				if (tokens.next().type == "}") {
+					tokens.clearSave();
+					return new Expr("lambda", {params: paramNames, body: body});
+				}
+				else {
+					tokens.restore();
+					return atom(tokens);
+				}
 			}
 			else {
 				tokens.restore();
@@ -516,18 +515,52 @@ const SimpleParser = (() => {
 		}
 
 		/*
+			Attempts to parse an assignment expression
+			An Assignment Expression is one of:
+				Addition or Subtraction Expression,
+				Variable Expression "=" Expression
+			Note: the value of an assignment expr is the value of the right-hand side expression
+			@param tokens - TokenStream - the token stream
+			@return Expr? - the expr if the token stream matches an assignment expr, otherwise false
+		*/
+		function assignment(tokens) {
+			tokens.save();
+			let lhs = addSub(tokens); // left-hand side
+			if (!lhs) {
+				tokens.restore();
+				return false;
+			}
+			if (lhs.type != "variable") { // TODO add object field assignment
+				return lhs;
+			}
+			if (tokens.next().type != "=") {
+				tokens.restore();
+				return addSub(tokens);
+			}
+			let rhs = parseExpr(tokens); // right-hand side
+			if (rhs) { 
+				tokens.clearSave();
+				return new Expr("assignment", {variable: lhs, value: rhs});
+			}
+			else {
+				tokens.restore();
+				return addSub(tokens);
+			}
+		}
+
+		/*
 			Attempts to parse a joint expression
 			A Joint Expression is:
-				(Addition or Subtraction Expression) ("," Addition Or Subtraction Expression)*
+				(Assignment Expression) ("," Assigment Expression)*
 			Note: the value of the joint expr is the value of the last expression
 			@param tokens - TokenStream - the stream of tokens
 			@return Expr? - the expr if the token stream matches a joint expr, otherwise false
 		*/
 		function jointExpression(tokens) {
-			let expr = addSub(tokens);
+			let expr = assignment(tokens);
 			while (tokens.save(), tokens.next().type == ",") { // save in case token is not ","
 				tokens.clearSave(); // the token was "," so no need to restore
-				let nextExpr = addSub(tokens);
+				let nextExpr = assignment(tokens);
 				if (!nextExpr) {
 					throw "Expected another expression but found none";
 				}
@@ -553,111 +586,13 @@ const SimpleParser = (() => {
 	})();
 
 	/*
-		Parses statements from the token stream
-	*/
-	const StatementParser = (() => {
-
-		/* The statement data container class */
-		class Statement {
-			/*
-				Creates a statement from the given data
-				@param type - string - the statement type
-				@param data - any - the data associated with this statement
-			*/
-			constructor(type, data) {
-				this.type = type;
-				this.data = data;
-			}
-		}
-
-		/*
-			The functions for parsing different statement types 
-			Signature: (tokens) -> Statement?
-			Each function returns the statement if it matches the given statement type, otherwise false
-		*/
-		const STATEMENT_PARSERS = [
-			assignment,
-			expr
-		];
-
-		/*
-			Attempts to parse an assignment statement
-			An Assignment Statement is:
-				<Variable Name Expression> = <Expression>
-			@param tokens - TokenStream - the token stream
-			@return Statement? - the statement if it matches an assigment statement, otherwise false
-		*/
-		function assignment(tokens) {
-			tokens.save();
-			let lhs = ExprParser.parse(tokens); // left-hand side
-			let equalsToken = tokens.next();
-			if (!lhs || equalsToken.type != "=") {
-				tokens.restore();
-				return false;
-			}
-			let rhs = ExprParser.parse(tokens); // right-hand side
-			if (lhs.type == "variable" && rhs) { // TODO add object field assignment
-				tokens.clearSave();
-				return new Statement("assignment", {variable: lhs.data, value: rhs});
-			}
-			else {
-				tokens.restore();
-				return false;
-			}
-		}
-
-		/*
-			Attempts to parse an expression statement
-			An Expression Statement is:
-				<Expression>
-			It is just a single expression as a statement. This is can be used for any
-				expression, but is most often used for function call expressions
-				where the return value is ignored,
-			@param tokens - TokenStream - the token stream
-			@return Statement? - the statement if it matches an assigment statement, otherwise false
-		*/
-		function expr(tokens) {
-			tokens.save();
-			let expr = ExprParser.parse(tokens);
-			if (expr) {
-				tokens.clearSave();
-				return new Statement("expr", expr);
-			}
-			else {
-				tokens.restore();
-				return false;
-			}
-		}
-
-		/*
-			Attempts to parse a statement of any type
-			@param tokens - TokenStream - the token stream
-			@return Statement? - the statement if it matches any statement type, otherwise false
-		*/
-		function parseStatement(tokens) {
-			for (let parser of STATEMENT_PARSERS) {
-				let statement = parser(tokens);
-				if (statement) {
-					return statement;
-				}
-			}
-			return false;
-		}
-
-		return {
-			parse: parseStatement
-		};
-
-	})();
-
-	/*
 		Parse an input string
 		@param s - string - the input source string
 		@return Statement[] - the statements described by the source
 	*/
 	function parse(s) {
 		const tokens = Lexer.lex(s);
-		return StatementParser.parse(tokens);
+		return ExprParser.parse(tokens);
 	}
 
 	return {
@@ -668,7 +603,7 @@ const SimpleParser = (() => {
 })();
 
 var result = SimpleParser.parse(`
-f = []:a().parentClass {
+f = ([]:a().parentClass {
 	/*
 		this is a multi-line comment
 	*/ 
@@ -679,7 +614,7 @@ f = []:a().parentClass {
 	anotherMethod(a, b, c) => { // does something
 		d = a + b + c
 	}
-}, 10, x+1
+}, 10, x+2)
 
 `);
 
