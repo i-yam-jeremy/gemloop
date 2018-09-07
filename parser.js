@@ -11,11 +11,15 @@ const SimpleParser = (() => {
 	*/
 	const Lexer = (() => {
 
+		/* The reserved keywords that cannot be used as identifiers */
+		const KEYWORDS = [
+			"if", "elif", "else"
+		];
+
 		/* The regular expressions for matching tokens */
 		const TOKEN_REGEXES = {
 			"integer": /^[0-9]+/,
-			"identifier": /^(?!if|elif|else)[A-Za-z_][A-Za-z_0-9]*/,
-			"keyword": /^(?:if|elif|else)/,
+			"identifier": /^[A-Za-z_][A-Za-z_0-9]*/,
 			"(": /^\(/,
 			")": /^\)/,
 			"[": /^\[/,
@@ -73,76 +77,157 @@ const SimpleParser = (() => {
 				this.tokens = tokens;
 				this.position = 0;
 				this.savedStates = [];
+				
+				this.__preprocess();
 			}
 
 			/*
-				Gets the next token in the token stream, skipping whitespace and comments
+				Preprocess whitespace if it is available at the current position
+				@param processedTokens - Token[] - the output array of already processed tokens
+				@return boolean - true iff whitespacce was found and added to processedTokens, otherwise false
+			*/
+			__preprocessWhitespace(processedTokens) {
+				if (this.tokens[this.position].type == "whitespace") {
+					this.position++; // skip
+					return true;
+				}
+				return false;
+			}
+
+			/*
+				Preprocess a string literal if one is available at the current position
+				@param processedTokens - Token[] - the output array of already processed tokens
+				@return boolean - true iff a string literal was found and added to processedTokens, otherwise false
+			*/
+			__preprocessStringLiteral(processedTokens) {
+				if (["'", "\""].indexOf(this.tokens[this.position].type) > -1) { // string
+					let quoteType = this.tokens[this.position].type;
+					this.position++; // skip initial ' or "
+					let escaped = false;
+					let stringValue = [];
+					while (this.tokens[this.position].type != quoteType || escaped) {
+						if (!escaped && this.tokens[this.position].type == "\\") {
+							escaped = true;
+						}
+						else {
+							if (escaped) {
+								escaped = false;
+								const escapeChars = {
+									"n": "\n",
+									"r": "\r",
+									"t": "\t",
+									"'": "'",
+									"\"": "\"",
+									"\\": "\\"
+								};
+								let escapeChar = this.tokens[this.position].value;
+								if (escapeChar in escapeChars) {
+									stringValue += escapeChars[escapeChar];
+								}
+								else {
+									throw "Invalid escape char: " + escapeChar;
+								}
+							}
+							else {
+								stringValue += this.tokens[this.position].value;
+							}
+						}
+						this.position++;
+					}
+					this.position++; // skip end quote
+					processedTokens.push(new Token("string", stringValue)); 
+					return true;
+				}
+				return false;
+			}
+
+			/*
+				Preprocess a comment if one is available at the current position
+				@param processedTokens - Token[] - the output array of already processed tokens
+				@return boolean - true iff a comment was found and added to processedTokens, otherwise false
+			*/
+			__preprocessComment(processedTokens) {
+				if (this.tokens[this.position].type == "/" && this.tokens[this.position+1] && ["/", "*"].indexOf(this.tokens[this.position+1].type) > -1) { // check if comment
+					let bodyTokens = [];
+					if (this.tokens[this.position+1].type == "/") { // single-line comment
+						this.position += 2; // skip "//"
+						while (!(this.position >= this.tokens.length || this.tokens[this.position].value.includes("\n"))) {
+							bodyTokens.push(this.tokens[this.position]);
+							this.position++;
+						}
+						this.position++; // skip the last whitespace
+					}
+					else if (this.tokens[this.position+1].type == "*") { // multi-line comment
+						this.position += 2; // skip "/*"
+						while (!(this.tokens[this.position].type == "*" && this.tokens[this.position+1] && this.tokens[this.position+1].type == "/")) {
+							if (this.position >= this.tokens.length) {
+								throw "Reached end of file with unclosed multi-line comment";
+							}
+							bodyTokens.push(this.tokens[this.position]);
+							this.position++;
+						}
+						this.position += 2; // skip the end "*/"
+					}
+					
+					let body = bodyTokens.map(token => token.value).join("");
+					preprocessedTokens.push(Token("comment", body));
+					return true;
+				}
+				return false;
+			}
+
+			/*
+				Preprocess a keyword if one is available at the current position
+				@param processedTokens - Token[] - the output array of already processed tokens
+				@return boolean - true iff a keyword was found and added to processedTokens, otherwise false
+			*/
+			__preprocessKeyword(preprocessedTokens) {
+				let token = this.tokens[this.position];
+				if (token.type == "identifier" && KEYWORDS.indexOf(token.value) > -1) {
+					preprocessedTokens.push(new Token("keyword", token.value));
+					return true;
+				}
+				return false;
+			}
+
+			/*
+				Preprocessed the tokens, removing whitespace, condensing string literals into a single token, and condensing comments into a single token
+			*/
+			__preprocess() {
+				const preprocessors = [
+					a => this.__preprocessWhitespace(a),
+					a => this.__preprocessStringLiteral(a),
+					a => this.__preprocessComment(a),
+					a => this.__preprocessKeyword(a)
+				];
+				let processedTokens = [];
+				while (this.position < this.tokens.length) {
+					let specialPreprocessUsed = false; // if any of the token modifiers are used
+					for (let preprocessor of preprocessors) {
+						specialPreprocessUsed |= preprocessor(processedTokens);
+						if (this.position >= this.tokens.length) {
+							break;
+						}
+					}
+					if (!specialPreprocessUsed) {
+						processedTokens.push(this.tokens[this.position++]);
+					}
+				}
+				this.position = 0;
+				this.tokens = processedTokens;
+			}
+
+			/*
+				Gets the next token in the token stream
+				@param keepComments - boolean (Optional) - whether or not to read a comment if it is the next token (useful for using comments above functions as documentation)
 				@return Token - the next token in the stream, or a Token with type "EOF" if reached the end of the stream
 			*/
-			next() {
+			next(keepComments) {
 				if (this.position >= this.tokens.length) {
 					return new Token("EOF", "");
 				}
 				else {
-					if (this.tokens[this.position].type == "whitespace") {
-						this.position++;
-						return this.next();
-					}
-					else if (["'", "\""].indexOf(this.tokens[this.position].type) > -1) { // string
-						let quoteType = this.tokens[this.position].type;
-						this.position++; // skip initial ' or "
-						let escaped = false;
-						let stringValue = [];
-						while (this.tokens[this.position].type != quoteType || escaped) {
-							if (!escaped && this.tokens[this.position].type == "\\") {
-								escaped = true;
-							}
-							else {
-								if (escaped) {
-									escaped = false;
-									const escapeChars = {
-										"n": "\n",
-										"r": "\r",
-										"t": "\t",
-										"'": "'",
-										"\"": "\"",
-										"\\": "\\"
-									};
-									let escapeChar = this.tokens[this.position].value;
-									if (escapeChar in escapeChars) {
-										stringValue += escapeChars[escapeChar];
-									}
-									else {
-										throw "Invalid escape char: " + escapeChar;
-									}
-								}
-								else {
-									stringValue += this.tokens[this.position].value;
-								}
-							}
-							this.position++;
-						}
-						this.position++; // skip end quote
-						return new Token("string", stringValue); 
-					}
-					else if (this.tokens[this.position].type == "/" && this.tokens[this.position+1] && ["/", "*"].indexOf(this.tokens[this.position+1].type) > -1) { // check if comment
-						if (this.tokens[this.position+1].type == "/") { // single-line comment
-							this.position += 2; // skip "//"
-							while (!(this.position >= this.tokens.length || this.tokens[this.position].value.includes("\n"))) {
-								this.position++;
-							}
-							this.position++; // skip the last whitespace
-						}
-						else if (this.tokens[this.position+1].type == "*") { // multi-line comment
-							this.position += 2; // skip "/*"
-							while (!(this.tokens[this.position].type == "*" && this.tokens[this.position+1] && this.tokens[this.position+1].type == "/")) {
-								if (this.position >= this.tokens.length) {
-									throw "Reached end of file with unclosed multi-line comment";
-								}
-								this.position++;
-							}
-							this.position += 2; // skip the end "*/"
-						}
+					if (!keepComments && this.tokens[this.position].type == "comment") {
 						return this.next();
 					}
 					else {
@@ -642,6 +727,7 @@ const SimpleParser = (() => {
 				return lhs;
 			}
 			if (tokens.next().type != "=") {
+				console.log(tokens);
 				tokens.restore();
 				return ifElse(tokens);
 			}
