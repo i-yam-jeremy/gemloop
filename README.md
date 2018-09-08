@@ -1,4 +1,5 @@
-# Simple Parser
+# Simple Language
+A simple language that is mainly functional. You can try out and experiment with the following examples as you read in the [playground](https://i-yam-jeremy.github.io/simple-parser/).
 
 ## Basic Expressions
 Arithmetic and function calls are as you would expect and similar to many other languages, such as JavaScript, C, etc. Strings behave as they do in JavaScript.
@@ -124,3 +125,6 @@ myClass = <> {
 },
 myClass(10)
 ```
+
+## And you're done!
+That's all there is to it. Feel free to make more in the [playground](https://i-yam-jeremy.github.io/simple-parser/)
