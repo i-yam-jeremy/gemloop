@@ -1,9 +1,9 @@
 /*
 
-	A library for parsing a simple language
+	A library for parsing the GemLoop language
 
 */
-const SimpleParser = (() => {
+const GemLoopParser = (() => {
 
 	/*
 		The lexer/tokenizer for the language
@@ -983,12 +983,12 @@ const SimpleParser = (() => {
 })();
 
 /*
-	Evaluates the code in the simple language
+	Evaluates the code written in the GemLoop language
 */
-const SimpleInterpreter = (() => {
+const GemLoopInterpreter = (() => {
 
 	/*
-		A function object in the language
+		A function object in the GemLoop runtime environment
 	*/
 	class Func {
 		
@@ -1030,7 +1030,7 @@ const SimpleInterpreter = (() => {
 	}
 
 	/*
-		A class definition in the language
+		A class definition in the GemLoop runtime environment
 		Note: this is not an instance of the class, it is the definition of the class
 	*/
 	class Class {
