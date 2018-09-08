@@ -1201,7 +1201,7 @@ const GemLoopInterpreter = (() => {
 		@return any - the result of evaluation
 	*/
 	function run(s) {
-		let expr = SimpleParser.parse(s);
+		let expr = GemLoopParser.parse(s);
 		let scope = {};
 		let result = evalExpr(expr, scope);
 		return result;
