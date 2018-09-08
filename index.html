@@ -1,5 +1,134 @@
 <html>
 	<head>
 		<script src="parser.js" type="text/javascript"></script>
+		<script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.3.1/jquery.min.js"></script>
+		<link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap.min.css" integrity="sha384-BVYiiSIFeK1dGmJRAkycuHAHRg32OmUcww7on3RYdg4Va+PmSTsz/K68vbdEjh4u" crossorigin="anonymous">
+		<link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap-theme.min.css" integrity="sha384-rHyoN1iRsVXV4nD0JutlnGaslCJuC7uwjduW9SVrLvRYooPp2bWYgmgJQIXwl/Sp" crossorigin="anonymous">
+		<script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/js/bootstrap.min.js" integrity="sha384-Tc5IQib027qvyjSMfHjOMaLkfuWVxZxUPnCJA7l2mCWNIpG9mGCD8wGNIcPD7Txa" crossorigin="anonymous"></script>
+		<script type="text/javascript">
+
+			/* Examples of the language */
+			const EXAMPLES = {
+				"hello-world": `"Hello world!"`,
+				"basic-arithmetic": `10 + 3*4`,
+				"comments": `
+/*
+ This 
+  is 
+    a 
+      multi-line
+        comment
+
+*/
+10 + 3 // this is a single-line comment
+`,
+				"variable-assignment": `x = 10`,
+				"if-elif-else": `
+x = if (10 == 3 || false || 3 == 3) {
+	10
+}
+elif false {
+	11
+}
+else {
+	"Hi"
+}`,
+				"joining-expressions": `x = 10, y = 30, x+y`,
+				"functions": `f = (x, y) => { z = x+y, z*z }`,
+				"classes": `
+myClass = <> {
+	init(n) => {
+		this.a = n+2
+	}
+	aMethod(m) => {
+		this.a * m
+	}
+},
+myClass(10).aMethod(3)`,
+				"class-inheritance": `
+myClass = <> {
+	init(n) => {
+		this.a = n+2
+	}
+	aMethod(m) => {
+		this.a * m
+	}
+},
+myChildClass = <>:myClass {
+	aMethod(m) { // overrided
+		this.a - m;
+	}
+},
+myChildClass(10).aMethod(3)`
+
+			};
+
+			document.addEventListener("DOMContentLoaded", () => {
+				let sourceTextarea = $("#source");
+				let resultTextarea = $("#result");
+				$("#run-button").click((e) => {
+					let source = sourceTextarea.val();
+					let resultString;
+					try {
+						let result = SimpleInterpreter.run(source);
+						let alreadyVisited = [];
+						let cycleManager = (key, value) => { // Cyclic JSON to string adapted from https://stackoverflow.com/questions/9382167/serializing-object-that-contains-cyclic-object-value
+							if (typeof value == "object") {
+								if (alreadyVisited.indexOf(value) > -1) {
+									return;
+								}
+								alreadyVisited.push(value);
+							}
+							return value;
+						};
+						resultString = JSON.stringify(result, cycleManager, 4);
+						resultTextarea.css('color', '#000000');
+					} catch (e) {
+						resultTextarea.css('color', '#FF0000');
+						resultString = e.toString();
+					}
+					resultTextarea.val(resultString);
+				});
+
+				$("#example").change((e) => {
+					let exampleId = $("#example").val();
+					sourceTextarea.val(EXAMPLES[exampleId]);
+				});
+			});
+		</script>
 	</head>
+	<body>
+		<div class="row">
+			<div class="col-sm-2">
+				<div style="padding: 5px">
+					<button class="btn btn-primary" id="run-button">Run</button>
+				</div>
+			</div>
+			<div class="col-sm-10">
+				<div style="padding: 10px">
+					Examples:
+					<select id="example">
+						<option selected="selected" disabled>Select One</option>
+						<option value="hello-world">Hello world!</option>
+						<option value="basic-arithmetic">Basic Arithmetic</option>
+						<option value="comments">Comments</option>
+						<option value="variable-assignment">Variable Assignment</option>
+						<option value="if-elif-else">If, Elif, Else</option>
+						<option value="joining-expressions">Joining Expressions</option>
+						<option value="functions">Functions</option>
+						<option value="classes">Classes</option>
+						<option value="class-inheritance">Class Inheritance</option>
+					</select>
+				</div>
+			</div>
+		</div>
+		<div class="row">
+			<div class="col-md-6">
+				<textarea class="form-control" style="display: table-cell; height: 100%; width: 100%; resize: none" id="source"></textarea>
+			</div>
+			<div class="col-md-6">
+				<textarea class="form-control" style="display: table-cell; height: 100%; width: 100%; resize: none" id="result" readonly></textarea>
+			</div>
+		</div>
+	</body>
 </html>

@@ -173,7 +173,7 @@ const SimpleParser = (() => {
 					}
 					
 					let body = bodyTokens.map(token => token.value).join("");
-					preprocessedTokens.push(Token("comment", body));
+					processedTokens.push(new Token("comment", body));
 					return true;
 				}
 				return false;
@@ -184,10 +184,10 @@ const SimpleParser = (() => {
 				@param processedTokens - Token[] - the output array of already processed tokens
 				@return boolean - true iff a keyword was found and added to processedTokens, otherwise false
 			*/
-			__preprocessKeyword(preprocessedTokens) {
+			__preprocessKeyword(processedTokens) {
 				let token = this.tokens[this.position];
 				if (token.type == "identifier" && KEYWORDS.indexOf(token.value) > -1) {
-					preprocessedTokens.push(new Token("keyword", token.value));
+					processedTokens.push(new Token("keyword", token.value));
 					this.position++;
 					return true;
 				}
@@ -1128,7 +1128,6 @@ const SimpleInterpreter = (() => {
 		let expr = SimpleParser.parse(s);
 		let scope = {};
 		let result = evalExpr(expr, scope);
-		console.log(scope);
 		return result;
 	}
 
