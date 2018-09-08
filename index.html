@@ -71,7 +71,6 @@ myChildClass(10).aMethod(3)`
 						e.preventDefault();
 						let start = this.selectionStart;
 						let end = this.selectionEnd;
-						console.log(start, end);
 						$(this).val($(this).val().substring(0, start)
 							+ "\t"
 							+ $(this).val().substring(end));

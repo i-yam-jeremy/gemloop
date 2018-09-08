@@ -44,7 +44,7 @@ const SimpleParser = (() => {
 			"=": /^\=/,
 			"\\": /^\\/,
 			"|": /^\|/,
-			"&": /^\|/,
+			"&": /^\&/,
 			"whitespace": /^\s+/
 		};
 
@@ -54,10 +54,17 @@ const SimpleParser = (() => {
 				Creates a token with the given data
 				@param type - string - the type of the token
 				@param value - string - the string value of the token
+				@param line - positive integer - the line number at the start of this token
+				@param col - positive integer - the column number at the start of this token
+				@param charPosition - natural number - the offset in characters from the start 
+					of the source string to the start of this token
 			*/
-			constructor(type, value) {
+			constructor(type, value, line, col, charPosition) {
 				this.type = type;
 				this.value = value;
+				this.line = line;
+				this.col = col;
+				this.charPosition = charPosition;
 			}
 		}
 
@@ -69,18 +76,21 @@ const SimpleParser = (() => {
 
 				tokens - Token[] - the source array of tokens
 				position - natural_number - the current position in the token stream
-				savedStates - natural_number[] - the saved position states, used to restore to a previous position state
+				savedStates - (natural number)[] - the saved position states, used to restore to a previous position state
+				source - string - the source code string
 			*/
 
 			/* 
 				Creates a token stream from the given array of tokens
-				@param tokens - Token[] - the sourcce array of tokens
+				@param tokens - Token[] - the source array of tokens
+				@param source - string - the source code string
 			*/
-			constructor(tokens) {
+			constructor(tokens, source) {
 				this.tokens = tokens;
 				this.position = 0;
 				this.savedStates = [];
-				
+				this.source = source;
+
 				this.__preprocess();
 			}
 
@@ -254,7 +264,27 @@ const SimpleParser = (() => {
 			/* clears the last saved state without restoring to it */
 			clearSave() {
 				this.savedStates.pop();
-			}	
+			}
+
+			/*
+				Displays an error at the current token
+				@param message - string - the error message
+				@throws Exception - an exception based on the given error message and token position
+			*/
+			error(message) {
+				let positionString;
+				let charPosition;
+				if (this.position >= this.tokens.length) {
+					positionString = "EOF";
+					charPosition = Math.max(0, this.source.length-20);
+				}
+				else {
+					let token = this.tokens[this.position];
+					positionString = token.line + ":" + token.col;
+					charPosition = token.charPosition;
+				}
+				throw "Error occurred at " + positionString + " around " + this.source.substring(charPosition, charPosition+20) + "\n" + message;
+			}
 		}
 
 		/*
@@ -263,24 +293,37 @@ const SimpleParser = (() => {
 			@return TokenStream - the stream of tokens
 		*/
 		function lex(s) {
+			let source = s;
 			let tokens = [];
+			let line = 1;
+			let col = 1;
+			let charPosition = 0;
 			while (s.length > 0) {
 				let foundToken = false;
 				for (let tokenType in TOKEN_REGEXES) {
 					let result = TOKEN_REGEXES[tokenType].exec(s);
 					if (result && result[0] != null) {
 						let value = result[0];
-						tokens.push(new Token(tokenType, value));
+						tokens.push(new Token(tokenType, value, line, col, charPosition));
 						foundToken = true;
 						s = s.substring(value.length);
+						charPosition += value.length;
+						let lineSeparated = value.split("\n");
+						line += lineSeparated.length-1; // count how many newlines there were in the token
+						if (lineSeparated.length == 1) { // if no newlines
+							col += value.length;
+						}
+						else { // if newlines
+							col = 1 + lineSeparated[lineSeparated.length-1].length; // 1 + (length of last line) because indexing starts at 1
+						}
 						break;
 					}
 				}
 				if (!foundToken) {
-					throw "Unidentitifed token: " + s;
+					throw "Unidentitifed token at " + line + ":" + col + ": " + s;
 				}
 			}
-			return new TokenStream(tokens);
+			return new TokenStream(tokens, source);
 		}
 
 		return {
@@ -323,7 +366,7 @@ const SimpleParser = (() => {
 					return expr;
 				}
 				else {
-					throw "Expected ')' but found '" + endToken.type + "'";
+					tokens.error("Expected ')' but found '" + endToken.type + "'");
 				}
 			}
 			else {
@@ -429,7 +472,7 @@ const SimpleParser = (() => {
 					return expr;
 				}
 			}
-			throw "Expected atomic expression (parentheses, integer literal, or variable name) but none found.";
+			return false;	
 		}
 
 		/*
@@ -447,7 +490,7 @@ const SimpleParser = (() => {
 			if (["-", "!"].indexOf(token.type) > -1) {
 				let expr = atom(tokens);
 				if (!expr) {
-					throw "Expected expression but found none";
+					tokens.error("Unary Operator: expected expression but found none");
 				}
 				return new Expr("unary-op", {expr: expr, op: token.type});
 			}
@@ -508,15 +551,17 @@ const SimpleParser = (() => {
 			if (tokens.next().type == "{") {
 				let body = parseExpr(tokens);
 				if (!body) {
-					throw "No lambda expression body found";
+					tokens.error("Lambda: no body found");
 				}
+				tokens.save(); // in case next token is not "}"
 				if (tokens.next().type == "}") {
+					tokens.clearSave(); // it was "}" so no need to restore
 					tokens.clearSave();
 					return new Expr("lambda", {params: paramNames, body: body});
 				}
 				else {
 					tokens.restore();
-					return unaryOp(tokens);
+					tokens.error("Lambda: expected '}' after body but none found");
 				}
 			}
 			else {
@@ -550,10 +595,10 @@ const SimpleParser = (() => {
 				let nextToken = tokens.next();
 				let parentClassExpr;
 				if (nextToken.type == ":") {
+					console.log("Hi");
 					parentClassExpr = parseExpr(tokens);
 					if (!parentClassExpr) {
-						tokens.restore();
-						return lambda(tokens);
+						tokens.error("Class Definition: expected parent class expression");
 					}
 					nextToken = tokens.next(); // for "{"
 				}
@@ -564,17 +609,25 @@ const SimpleParser = (() => {
 				let methods = {};
 				while (tokens.save(), tokens.next().type != "}") { // save in case next token is not a "}" so it can be restored and method definition read
 					tokens.restore(); // restore since next token was not "}"
+					tokens.save(); // save in case token is not identifier
 					let methodNameToken = tokens.next();
 					if (methodNameToken.type != "identifier") {
 						tokens.restore();
-						return lambda(tokens);
+						tokens.error("Class Definition: expected method name, but found token of type '" + methodNameToken.type + "'");
 					}
+					tokens.clearSave(); // clear save since it was identifier
 					let methodName = methodNameToken.value;
+					tokens.save(); // save in case expr is not type lambda
 					let method = lambda(tokens); // parse lambda expression
+					if (!method) {
+						tokens.restore();
+						tokens.error("Class Definition: expected lambda expression for method but found none");
+					}
 					if (method.type != "lambda") { // if next is not a lambda expression, restore and fall-through since it is not a class definition or there is an error
 						tokens.restore();
-						return lambda(tokens);
+						tokens.error("Class Definition: expected lambda expression for method but found '" + method.type + "'");
 					}
+					tokens.clearSave(); // clear save since it was type lambda
 					methods[methodName] = method;
 				}
 				tokens.clearSave(); // matched a "}" so don't need to restore
@@ -622,9 +675,9 @@ const SimpleParser = (() => {
 						tokens.restore(); // was not ")" so restore
 						let args = [];
 						while (true) {
-							let arg = parseExpr(tokens);
+							let arg = assignment(tokens); // cannot be joint expression because it is syntactically ambiguous with comma separated args (to use joint expression wrap in parentheses)
 							if (!arg) {
-								throw "Expected argument expression but none found";
+								tokens.error("Function Call: expected argument expression but none found");
 							}
 							args.push(arg);
 							let commaToken = tokens.next();
@@ -635,7 +688,7 @@ const SimpleParser = (() => {
 								break;
 							}
 							else {
-								throw "Expected ',' or ')' but found '" + commaToken.type + "'";
+								tokens.error("Function Call: expected ',' or ')' but found '" + commaToken.type + "'");
 							}
 						}
 						expr = new Expr("function-call", {func: expr, args: args});
@@ -644,7 +697,7 @@ const SimpleParser = (() => {
 				else if (type == ".") { // parse object field expr
 					let fieldName = variableName(tokens);
 					if (!fieldName) {
-						throw "Expected field name but none found";
+						tokens.error("Object Field: expected field name but found none");
 					}
 					expr = new Expr("object-field", {object: expr, field: fieldName.data});
 				}
@@ -676,6 +729,9 @@ const SimpleParser = (() => {
 			while (tokens.save(), ["*", "/", "%"].indexOf((op = tokens.next().type)) > -1) { // save before the operator token request in case it is not one of '*', '/', '%'
 				tokens.clearSave(); // it is a valid operator so save can be cleared
 				let rhs = functionCallOrObjectField(tokens); // right-hand side
+				if (!rhs) {
+					tokens.error("Arithmetic Operator: expected right-hand side expression for operator '" + op + "'");
+				}
 				expr = new Expr(op, {left: expr, right: rhs});
 			}
 			tokens.restore(); // undo the last next token request because it was not an operator
@@ -704,6 +760,9 @@ const SimpleParser = (() => {
 			while (tokens.save(), ["+", "-"].indexOf((op = tokens.next().type)) > -1) { // save before the operator token request in case it is not one of '+', '-'
 				tokens.clearSave(); // it is a valid operator so save can be cleared
 				let rhs = mulDivMod(tokens); // right-hand side
+				if (!rhs) {
+					tokens.error("Arithmetic Operator: expected right-hand side expression for operator '" + op + "'");
+				}
 				expr = new Expr(op, {left: expr, right: rhs});
 			}
 			tokens.restore(); // undo the last next token request because it was not an operator
@@ -732,6 +791,9 @@ const SimpleParser = (() => {
 			while (tokens.save(), ["<", ">"].indexOf((op = tokens.next().type)) > -1 || ["<=", ">=", "!=", "=="].indexOf((op += tokens.next().type)) > -1) { // save before the operator token request in case it is not one of the valid operators
 				tokens.clearSave(); // it is a valid operator so save can be cleared
 				let rhs = addSub(tokens); // right-hand side
+				if (!rhs) {
+					tokens.error("Comparison Operator: expected right-hand side expression for operator '" + op + "'");
+				}
 				expr = new Expr(op, {left: expr, right: rhs});
 			}
 			tokens.restore(); // undo the last next token request because it was not an operator
@@ -760,6 +822,9 @@ const SimpleParser = (() => {
 			while (tokens.save(), ["&&", "||"].indexOf((op = tokens.next().type+tokens.next().type)) > -1) { // save before the operator token request in case it is not one of the valid operators
 				tokens.clearSave(); // it is a valid operator so save can be cleared
 				let rhs = comparison(tokens); // right-hand side
+				if (!rhs) {
+					tokens.error("Logical Operator: expected right-hand side expression for operator '" + op + "'");
+				}
 				expr = new Expr(op, {left: expr, right: rhs});
 			}
 			tokens.restore(); // undo the last next token request because it was not an operator
@@ -785,24 +850,33 @@ const SimpleParser = (() => {
 				let conditionExpr = null;
 				if (["if", "elif"].indexOf(keyword.value) > -1) {
 					conditionExpr = atom(tokens);
+					if (!conditionExpr) {
+						tokens.error("Branch: expected condition expression but found none");
+					}
 				}
 
-				if (tokens.next().type == "{") {
+				tokens.save(); // in case next token is not "{"
+				let token = tokens.next();
+				if (token.type == "{") {
+					tokens.clearSave(); // clear save since it was "{"
 					let body = parseExpr(tokens);
 					if (!body) {
-						throw "Expected if-expression body but found none";
+						tokens.error("Branch: expected body but found none");
 					}
-					if (tokens.next().type == "}") {
+					tokens.save(); // in case token is not "}"
+					let token = tokens.next();
+					if (token.type == "}") {
+						tokens.clearSave(); // clear save since it was "}"
 						conditionals.push({condition: conditionExpr, body: body});
 					}
 					else {
 						tokens.restore();
-						return logicalOp(tokens);
+						tokens.error("Branch: expected '}' but found token of type '" + token.type + "'");
 					}
 				}
-				else {
+				else {	
 					tokens.restore();
-					return logicalOp(tokens);
+					tokens.error("Branch: expected '{' but found token of type '" + token.type + "'");
 				}
 				
 			}
@@ -840,14 +914,13 @@ const SimpleParser = (() => {
 				return ifElse(tokens);
 			}
 			let rhs = assignment(tokens); // right-hand side
-			if (rhs) { 
-				tokens.clearSave();
-				return new Expr("assignment", {variable: lhs, value: rhs});
-			}
-			else {
-				tokens.restore();
-				return ifElse(tokens);
-			}
+			
+			if (!rhs) {
+				tokens.error("Assignment: expected expression on right-hand side of '=' but found none");
+			}			
+
+			tokens.clearSave();
+			return new Expr("assignment", {variable: lhs, value: rhs});
 		}
 
 		/*
@@ -864,7 +937,7 @@ const SimpleParser = (() => {
 				tokens.clearSave(); // the token was "," so no need to restore
 				let nextExpr = assignment(tokens);
 				if (!nextExpr) {
-					throw "Expected another expression but found none";
+					tokens.error("Joint: expected another expression but found none");
 				}
 				exprs.push(nextExpr);
 			}
