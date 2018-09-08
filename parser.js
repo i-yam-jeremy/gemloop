@@ -232,6 +232,7 @@ const SimpleParser = (() => {
 				}
 				else {
 					if (!keepComments && this.tokens[this.position].type == "comment") {
+						this.position++;
 						return this.next();
 					}
 					else {
@@ -994,7 +995,9 @@ const SimpleInterpreter = (() => {
 				newScope["this"] = instance;
 				for (let methodName in clazz.methods) {
 					let method = clazz.methods[methodName];
-					instance[methodName] = new Func(method.data.params, method.data.body, newScope);
+					if (!(methodName in instance)) {
+						instance[methodName] = new Func(method.data.params, method.data.body, newScope);
+					}
 				}
 				clazz = clazz.parentClass;
 			}
@@ -1042,7 +1045,8 @@ const SimpleInterpreter = (() => {
 			return new Func(e.data.params, e.data.body, newScope);
 		},
 		"class-def": (e, s) => {
-			return new Class(e.data.parentClass, e.data.methods, s);
+			let parentClass = e.data.parentClass && evalExpr(e.data.parentClass, s);
+			return new Class(parentClass, e.data.methods, s);
 		},
 		"function-call": (e, s) => {
 			let func = evalExpr(e.data.func, s);
@@ -1064,7 +1068,6 @@ const SimpleInterpreter = (() => {
 				return object[e.data.field];
 			}
 			else {
-				console.error("Test");
 				throw "Object field access, expected object but found " + (typeof object);
 			}
 		},
