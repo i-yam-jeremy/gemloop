@@ -14,6 +14,10 @@
 				resize: none; 
 				font-family: "Lucida Console", Monaco, monospace; 
 			}
+			html, body {
+				max-width: 100%;
+				overflow-x: hidden;
+			}
 		</style>
 		<script type="text/javascript">
 
@@ -69,7 +73,97 @@ myChildClass = <>:myClass {
 		this.a - m
 	}
 },
-myChildClass(10).aMethod(3)`
+myChildClass(10).aMethod(3)`,
+				"lists": `
+/*
+	A recursively-defined list object
+*/
+List = <> {
+
+	/*
+		Creates a list with the given value as the first element and the given list as the rest
+		@param first - any - the first value in the list
+		@param rest - List? - the rest of the list, or null if this is the last element in the list
+	*/
+	init(first, rest) => {
+		this.first = first,
+		this.rest = rest
+	}
+
+	/*
+		Returns the length of this list
+		@return integer - the length of this list
+	*/
+	length() => {
+		if (this.rest == null) {
+			1
+		}
+		else {
+			1 + this.rest.length()
+		}
+	}
+
+	/*
+		Applies a given function to every element of this list
+		@param f - (any) => any - the function to be applied to every element of the list
+		@return List - the resultant list
+	*/
+	map(f) => {
+		List(
+			f(this.first),
+			if (this.rest != null) {
+				this.rest.map(f)
+			}
+			else {
+				null
+			}
+		)
+	}
+
+	/*
+		Reduces the list (from right to left) using the given function
+		@param f - (any, any) => any - the reducing function
+		@return any - the result of the reduction
+	*/
+	reduce(f) => {
+		if (this.rest != null) {
+			f(this.first, this.rest.reduce(f))
+		}
+		else {
+			this.first
+		}
+	}
+
+	/*
+		Converts this list to a comma-separated string
+		@return string - the string representation of this list
+	*/
+	str() => {
+		if (this.rest == null) {
+			this.first
+		}
+		else {
+			this.first + ", " + this.rest.str()
+		}
+	}
+
+	/*
+		Pushes the given value to the end of the list
+	*/
+	push(value) => {
+		if (this.rest == null) {
+			this.rest = List(value, null)
+		}
+		else {
+			this.rest.push(value)
+		}
+	}
+},
+
+l = List(1, List(2, List(3, null))),
+l.push(4),
+l.map(x => { x*x }).reduce((a, b) => { a+b })
+`
 
 			};
 
@@ -145,6 +239,7 @@ myChildClass(10).aMethod(3)`
 						<option value="functions">Functions</option>
 						<option value="classes">Classes</option>
 						<option value="class-inheritance">Class Inheritance</option>
+						<option value="lists">Lists</option>
 					</select>
 				</div>
 			</div>
@@ -156,10 +251,10 @@ myChildClass(10).aMethod(3)`
 		</div>
 		<div class="row">
 			<div class="col-md-6">
-				<textarea class="code-area form-control" style="width: 100%; height: 100%" id="source"></textarea>
+				<textarea class="code-area form-control" style="width: 100%; height: 90%" id="source"></textarea>
 			</div>
 			<div class="col-md-6">
-				<textarea class="code-area form-control" style="width: 100%; height: 100%" id="result" readonly></textarea>
+				<textarea class="code-area form-control" style="width: 100%; height: 90%" id="result" readonly></textarea>
 			</div>
 		</div>
 	</body>

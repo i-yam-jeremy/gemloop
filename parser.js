@@ -14,7 +14,8 @@ const GemLoopParser = (() => {
 		/* The reserved keywords that cannot be used as identifiers */
 		const KEYWORDS = [
 			"if", "elif", "else",
-			"true", "false"
+			"true", "false",
+			"null"
 		];
 
 		/* The regular expressions for matching tokens */
@@ -45,7 +46,7 @@ const GemLoopParser = (() => {
 			"\\": /^\\/,
 			"|": /^\|/,
 			"&": /^\&/,
-			"whitespace": /^\s+/
+			"whitespace": /^\s+/,
 		};
 
 		/* The token data container class */
@@ -320,7 +321,11 @@ const GemLoopParser = (() => {
 					}
 				}
 				if (!foundToken) {
-					throw "Unidentitifed token at " + line + ":" + col + ": " + s;
+					// Unknown character token (@, ?, ~, etc. which can appear in comments but not in actual code)
+					tokens.push(new Token(s[0], s[0], line, col, charPosition));
+					col++;
+					charPosition++;
+					s = s.substring(1);
 				}
 			}
 			return new TokenStream(tokens, source);
@@ -375,6 +380,24 @@ const GemLoopParser = (() => {
 			}
 		}
 
+
+		/*
+			Attempts to parse a null literal expression
+			@param tokens - TokenStream - the token stream
+			@return Expr? - the expr if the token stream matches a null literal expr, otherwise false
+		*/
+		function nullLiteral(tokens) {
+			tokens.save();
+			let nextToken = tokens.next();
+			if (nextToken.type == "keyword" && nextToken.value == "null") {
+				tokens.clearSave();
+				return new Expr("literal", null);
+			}
+			else {
+				tokens.restore();
+				return false;
+			}
+		}
 	
 		/*
 			Attempts to parse a boolean literal expression
@@ -465,7 +488,7 @@ const GemLoopParser = (() => {
 			@return Expr? - the expr if the token stream matches an atomic expr, otherwise false
 		*/
 		function atom(tokens) {
-			let exprParsers = [parentheses, booleanLiteral, numberLiteral, stringLiteral, variableName];
+			let exprParsers = [parentheses, nullLiteral, booleanLiteral, numberLiteral, stringLiteral, variableName];
 			for (let parser of exprParsers) {
 				let expr = parser(tokens);
 				if (expr) {
