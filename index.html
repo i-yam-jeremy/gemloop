@@ -74,6 +74,14 @@ myChildClass = <>:myClass {
 	}
 },
 myChildClass(10).aMethod(3)`,
+				"anonymous-classes": `
+(<> {
+	init(x, y) => {
+		this.x = x,
+		this.y = y
+	}
+})(10, 20)
+`,
 				"lists": `
 /*
 	A recursively-defined list object
@@ -195,6 +203,12 @@ l.map(x => { x*x }).reduce((a, b) => { a+b })
 						let alreadyVisited = [];
 						let cycleManager = (key, value) => { // Cyclic JSON to string adapted from https://stackoverflow.com/questions/9382167/serializing-object-that-contains-cyclic-object-value
 							if (typeof value == "object") {
+								if (value.constructor.name == "Func") {
+									return "<Function>";
+								}
+								if (value.constructor.name == "Class") {
+									return "<Class>";
+								}
 								if (alreadyVisited.indexOf(value) > -1) {
 									return;
 								}
@@ -240,6 +254,7 @@ l.map(x => { x*x }).reduce((a, b) => { a+b })
 						<option value="functions">Functions</option>
 						<option value="classes">Classes</option>
 						<option value="class-inheritance">Class Inheritance</option>
+						<option value="anonymous-classes">Anonymous Classes</option>
 						<option value="lists">Lists</option>
 					</select>
 				</div>
