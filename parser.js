@@ -595,7 +595,6 @@ const GemLoopParser = (() => {
 				let nextToken = tokens.next();
 				let parentClassExpr;
 				if (nextToken.type == ":") {
-					console.log("Hi");
 					parentClassExpr = parseExpr(tokens);
 					if (!parentClassExpr) {
 						tokens.error("Class Definition: expected parent class expression");
