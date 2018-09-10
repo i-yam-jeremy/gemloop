@@ -1,6 +1,6 @@
-[[https://github.com/i-yam-jeremy/gemloop/blob/master/images/GemLoop.svg|alt=GemLoop]]
 # GemLoop
-A programming language that is mainly functional, but with some object-oriented concepts as well. I created this language because I like writing parsers, compilers and interpreters. If you find it useful or want to modify it please feel free to use it. You can try out and experiment with the following examples as you read in the [playground](https://i-yam-jeremy.github.io/gemloop).
+![GemLoop](https://github.com/i-yam-jeremy/gemloop/blob/master/images/GemLoop.svg)  
+GemLoop is a programming language that is mainly functional, but with some object-oriented concepts as well. I created this language because I like writing parsers, compilers and interpreters. If you find it useful or want to modify it please feel free to use it. You can try out and experiment with the following examples as you read in the [playground](https://i-yam-jeremy.github.io/gemloop).
 
 ## Basic Expressions
 Arithmetic and function calls are as you would expect and similar to many other languages, such as JavaScript, C, etc. Strings behave as they do in JavaScript.
