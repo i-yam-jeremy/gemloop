@@ -262,9 +262,13 @@ const GemLoopParser = (() => {
 				this.position = this.savedStates.pop();
 			}
 
-			/* clears the last saved state without restoring to it */
+			/*
+				Clears the last saved state without restoring to it and returns the tokens since the last save
+				@return TokenStream - the tokens since the last save
+			*/
 			clearSave() {
-				this.savedStates.pop();
+				let savedPos = this.savedStates.pop();
+				return new TokenStream(this.tokens.slice(savedPos, this.position), this.source);
 			}
 
 			/*
@@ -344,14 +348,24 @@ const GemLoopParser = (() => {
 
 		/* The expression data container class */
 		class Expr {
+
 			/*
 				Creates an expression from the given data
 				@param type - string - the expression type
 				@param data - any - the data associated with this expression
+				@param tokens - TokenStream - the slice of tokens this expression was parsed from
 			*/
-			constructor(type, data) {
+			constructor(type, data, tokens) {
 				this.type = type;
 				this.data = data;
+				this.tokens = tokens;
+			}
+
+			/*
+				Throws a runtime error at the position of this exception
+			*/
+			error(message) {
+				throw this.tokens.error("Runtime Error:\n" + message);
 			}
 		}
 
@@ -360,7 +374,7 @@ const GemLoopParser = (() => {
 			@param tokens - TokenStream - the token stream
 			@return Expr? - the expr if the token stream matches a parenthetical expr, otherwise false
 		*/
-		function parentheses(tokens) {	
+		function parentheses(tokens) {
 			tokens.save();
 			let nextToken = tokens.next();
 			if (nextToken.type == "(") {
@@ -390,8 +404,7 @@ const GemLoopParser = (() => {
 			tokens.save();
 			let nextToken = tokens.next();
 			if (nextToken.type == "keyword" && nextToken.value == "null") {
-				tokens.clearSave();
-				return new Expr("literal", null);
+				return new Expr("literal", null, tokens.clearSave());
 			}
 			else {
 				tokens.restore();
@@ -408,8 +421,7 @@ const GemLoopParser = (() => {
 			tokens.save();
 			let nextToken = tokens.next();
 			if (nextToken.type == "keyword" && ["true", "false"].indexOf(nextToken.value) > -1) {
-				tokens.clearSave();
-				return new Expr("literal", nextToken.value == "true");
+				return new Expr("literal", nextToken.value == "true", tokens.clearSave());
 			}
 			else {
 				tokens.restore();
@@ -426,12 +438,11 @@ const GemLoopParser = (() => {
 			tokens.save();
 			let nextToken = tokens.next();
 			if (nextToken.type == "number") {
-				tokens.clearSave();
 				if (nextToken.value.includes(".")) {
-					return new Expr("literal", parseFloat(nextToken.value));
+					return new Expr("literal", parseFloat(nextToken.value), tokens.clearSave());
 				}
 				else {
-					return new Expr("literal", parseInt(nextToken.value));
+					return new Expr("literal", parseInt(nextToken.value), tokens.clearSave());
 				}
 			}
 			else {
@@ -449,8 +460,7 @@ const GemLoopParser = (() => {
 			tokens.save();
 			let nextToken = tokens.next();
 			if (nextToken.type == "string") {
-				tokens.clearSave();
-				return new Expr("literal", nextToken.value);
+				return new Expr("literal", nextToken.value, tokens.clearSave());
 			}
 			else {
 				tokens.restore();
@@ -467,8 +477,7 @@ const GemLoopParser = (() => {
 			tokens.save();
 			let nextToken = tokens.next();
 			if (nextToken.type == "identifier") {
-				tokens.clearSave();
-				return new Expr("variable", nextToken.value);
+				return new Expr("variable", nextToken.value, tokens.clearSave());
 			}
 			else {
 				tokens.restore();
@@ -515,7 +524,7 @@ const GemLoopParser = (() => {
 				if (!expr) {
 					tokens.error("Unary Operator: expected expression but found none");
 				}
-				return new Expr("unary-op", {expr: expr, op: token.type});
+				return new Expr("unary-op", {expr: expr, op: token.type}, tokens.clearSave());
 			}
 			else {
 				tokens.restore();
@@ -579,8 +588,7 @@ const GemLoopParser = (() => {
 				tokens.save(); // in case next token is not "}"
 				if (tokens.next().type == "}") {
 					tokens.clearSave(); // it was "}" so no need to restore
-					tokens.clearSave();
-					return new Expr("lambda", {params: paramNames, body: body});
+					return new Expr("lambda", {params: paramNames, body: body}, tokens.clearSave());
 				}
 				else {
 					tokens.restore();
@@ -653,7 +661,7 @@ const GemLoopParser = (() => {
 					methods[methodName] = method;
 				}
 				tokens.clearSave(); // matched a "}" so don't need to restore
-				return new Expr("class-def", {parentClass: parentClassExpr, methods: methods});
+				return new Expr("class-def", {parentClass: parentClassExpr, methods: methods}, tokens.clearSave());
 			}
 			else {
 				tokens.restore();
@@ -687,11 +695,10 @@ const GemLoopParser = (() => {
 
 			let type;
 			while (tokens.save(), ["(", "."].indexOf((type = tokens.next().type)) > -1) { // save for when next token is not '(', and loop so multiple function calls can be strung together like f()(x)(y)
-				tokens.clearSave(); // '(' or '.' is valid so don't need to save it because it does not need to be undone later
 				if (type == "(") { // parse function call expr
 					tokens.save(); // save in case token is not ")"
 					if (tokens.next().type == ")") { // handle no-argument function calls
-						expr = new Expr("function-call", {func: expr, args: []});	
+						expr = new Expr("function-call", {func: expr, args: []}, tokens.clearSave());	
 					}
 					else {
 						tokens.restore(); // was not ")" so restore
@@ -713,7 +720,7 @@ const GemLoopParser = (() => {
 								tokens.error("Function Call: expected ',' or ')' but found '" + commaToken.type + "'");
 							}
 						}
-						expr = new Expr("function-call", {func: expr, args: args});
+						expr = new Expr("function-call", {func: expr, args: args}, tokens.clearSave());
 					}
 				}
 				else if (type == ".") { // parse object field expr
@@ -721,10 +728,10 @@ const GemLoopParser = (() => {
 					if (!fieldName) {
 						tokens.error("Object Field: expected field name but found none");
 					}
-					expr = new Expr("object-field", {object: expr, field: fieldName.data});
+					expr = new Expr("object-field", {object: expr, field: fieldName.data}, tokens.clearSave());
 				}
 			}
-			tokens.restore(); // undo last request of token because it was not a '('
+			tokens.restore(); // undo last request of token because it was not a '(' or '.'
 			tokens.clearSave();
 			return expr;
 		}
@@ -749,12 +756,12 @@ const GemLoopParser = (() => {
 			let expr = functionCallOrObjectField(tokens);
 			let op;
 			while (tokens.save(), ["*", "/", "%"].indexOf((op = tokens.next().type)) > -1) { // save before the operator token request in case it is not one of '*', '/', '%'
-				tokens.clearSave(); // it is a valid operator so save can be cleared
+				let exprTokens = tokens.clearSave(); // it is a valid operator so save can be cleared
 				let rhs = functionCallOrObjectField(tokens); // right-hand side
 				if (!rhs) {
 					tokens.error("Arithmetic Operator: expected right-hand side expression for operator '" + op + "'");
 				}
-				expr = new Expr(op, {left: expr, right: rhs});
+				expr = new Expr(op, {left: expr, right: rhs}, exprTokens);
 			}
 			tokens.restore(); // undo the last next token request because it was not an operator
 			return expr;
@@ -780,12 +787,12 @@ const GemLoopParser = (() => {
 			let expr = mulDivMod(tokens);
 			let op;
 			while (tokens.save(), ["+", "-"].indexOf((op = tokens.next().type)) > -1) { // save before the operator token request in case it is not one of '+', '-'
-				tokens.clearSave(); // it is a valid operator so save can be cleared
+				let exprTokens = tokens.clearSave(); // it is a valid operator so save can be cleared
 				let rhs = mulDivMod(tokens); // right-hand side
 				if (!rhs) {
 					tokens.error("Arithmetic Operator: expected right-hand side expression for operator '" + op + "'");
 				}
-				expr = new Expr(op, {left: expr, right: rhs});
+				expr = new Expr(op, {left: expr, right: rhs}, exprTokens);
 			}
 			tokens.restore(); // undo the last next token request because it was not an operator
 			return expr;
@@ -811,12 +818,12 @@ const GemLoopParser = (() => {
 			let expr = addSub(tokens);
 			let op;
 			while (tokens.save(), ["<", ">"].indexOf((op = tokens.next().type)) > -1 || ["<=", ">=", "!=", "=="].indexOf((op += tokens.next().type)) > -1) { // save before the operator token request in case it is not one of the valid operators
-				tokens.clearSave(); // it is a valid operator so save can be cleared
+				let exprTokens = tokens.clearSave(); // it is a valid operator so save can be cleared
 				let rhs = addSub(tokens); // right-hand side
 				if (!rhs) {
 					tokens.error("Comparison Operator: expected right-hand side expression for operator '" + op + "'");
 				}
-				expr = new Expr(op, {left: expr, right: rhs});
+				expr = new Expr(op, {left: expr, right: rhs}, exprTokens);
 			}
 			tokens.restore(); // undo the last next token request because it was not an operator
 			return expr;
@@ -842,12 +849,12 @@ const GemLoopParser = (() => {
 			let expr = comparison(tokens);
 			let op;
 			while (tokens.save(), ["&&", "||"].indexOf((op = tokens.next().type+tokens.next().type)) > -1) { // save before the operator token request in case it is not one of the valid operators
-				tokens.clearSave(); // it is a valid operator so save can be cleared
+				let exprTokens = tokens.clearSave(); // it is a valid operator so save can be cleared
 				let rhs = comparison(tokens); // right-hand side
 				if (!rhs) {
 					tokens.error("Logical Operator: expected right-hand side expression for operator '" + op + "'");
 				}
-				expr = new Expr(op, {left: expr, right: rhs});
+				expr = new Expr(op, {left: expr, right: rhs}, exprTokens);
 			}
 			tokens.restore(); // undo the last next token request because it was not an operator
 			return expr;
@@ -904,7 +911,7 @@ const GemLoopParser = (() => {
 			}
 			tokens.restore(); // restore last unmatched keyword attempt
 			if (conditionals.length > 0) {
-				return new Expr("if", {conditionals: conditionals});
+				return new Expr("if", {conditionals: conditionals}, tokens.clearSave());
 			}
 			else {
 				tokens.restore();
@@ -941,8 +948,7 @@ const GemLoopParser = (() => {
 				tokens.error("Assignment: expected expression on right-hand side of '=' but found none");
 			}			
 
-			tokens.clearSave();
-			return new Expr("assignment", {variable: lhs, value: rhs});
+			return new Expr("assignment", {variable: lhs, value: rhs}, tokens.clearSave());
 		}
 
 		/*
@@ -954,6 +960,7 @@ const GemLoopParser = (() => {
 			@return Expr? - the expr if the token stream matches a joint expr, otherwise false
 		*/
 		function jointExpression(tokens) {
+			tokens.save();
 			let exprs = [assignment(tokens)];
 			while (tokens.save(), tokens.next().type == ",") { // save in case token is not ","
 				tokens.clearSave(); // the token was "," so no need to restore
@@ -965,9 +972,10 @@ const GemLoopParser = (() => {
 			}
 			tokens.restore(); // restore since last token was not ","
 			if (exprs.length > 1) { // if multiple joined expressions
-				return new Expr("joint", {exprs: exprs});
+				return new Expr("joint", {exprs: exprs}, tokens.clearSave());
 			}
 			else { // if only one expression, fall-through
+				tokens.clearSave();
 				return exprs[0];
 			}
 		}
@@ -1036,12 +1044,13 @@ const GemLoopInterpreter = (() => {
 
 		/*
 			Evaluates this function with the given arguments
+			@param e - Expr - the source expr, used for runtime error reporting
 			@param args - any[] - the arguments to be passed to the function
 			@return any - the result of calling the function
 		*/
-		call(args) {
+		call(e, args) {
 			if (this.params.length != args.length) {
-				throw "Expected " + this.params.length + " arguments but found " + args.length;
+				e.error("Function Call: expected " + this.params.length + " arguments but found " + args.length);
 			}
 			let newScope = Object.assign({}, this.scope);
 			for (let i = 0; i < this.params.length; i++) {
@@ -1079,10 +1088,11 @@ const GemLoopInterpreter = (() => {
 
 		/*
 			Instantiates and object that is an instance of this class
+			@param e - Expr - the source expr, used for runtime error reporting
 			@param args - any[] - the arguments to the constructor (the init method)
 			@return - object - an object that is an instance of this class
 		*/
-		instantiate(args) {
+		instantiate(e, args) {
 			let instance = {};
 			let clazz = this;
 			while (clazz != undefined) {
@@ -1097,10 +1107,10 @@ const GemLoopInterpreter = (() => {
 				clazz = clazz.parentClass;
 			}
 			if ("init" in instance) {
-				instance.init.call(args);
+				instance.init.call(e, args);
 			}
 			else {
-				throw "Error no constructor found";
+				e.error("Class Instatiation: error no constructor found");
 			}
 			return instance;
 		}
@@ -1146,15 +1156,15 @@ const GemLoopInterpreter = (() => {
 		"function-call": (e, s) => {
 			let func = evalExpr(e.data.func, s);
 			let argValues = e.data.args.map(argExpr => evalExpr(argExpr, s));
-			if (typeof func == "object" && func.constructor == Func) {
-				return func.call(argValues);
+			if (func instanceof Func) {	
+				return func.call(e, argValues);
 			}
-			else if (typeof func == "object" && func.constructor == Class) {
+			else if (func instanceof Class) {
 				let clazz = func;
-				return clazz.instantiate(argValues);
+				return clazz.instantiate(e, argValues);
 			}
 			else {
-				throw "Expected function for function call but found other type";
+				e.error("Function Call: expected function or class but found other type");
 			}
 		},
 		"object-field": (e, s) => {
@@ -1163,7 +1173,7 @@ const GemLoopInterpreter = (() => {
 				return object[e.data.field];
 			}
 			else {
-				throw "Object field access, expected object but found " + (typeof object);
+				e.error("Object Field: expected object but found " + (typeof object));
 			}
 		},
 		"if": (e, s) => {
@@ -1189,6 +1199,9 @@ const GemLoopInterpreter = (() => {
 				let value = evalExpr(e.data.value, s);
 				let object = evalExpr(e.data.variable.data.object, s);
 				let field = e.data.variable.data.field;
+				if (typeof object != "object") {
+					e.error("Assignment: object field expected object but found " + (typeof object));
+				}
 				object[field] = value;
 				return value;
 			}
@@ -1213,7 +1226,7 @@ const GemLoopInterpreter = (() => {
 			return EXPR_EVALUATORS[expr.type](expr, scope);
 		}
 		else {
-			throw "Invalid expression type: " + expr.type;
+			expr.error("Invalid expression type: " + expr.type);
 		}
 	}
 

@@ -205,6 +205,7 @@ l.map(x => { x*x }).reduce((a, b) => { a+b })
 						resultString = JSON.stringify(result, cycleManager, 4);
 						resultTextarea.css('color', '#000000');
 					} catch (e) {
+						console.error(e);
 						resultTextarea.css('color', '#FF0000');
 						resultString = e.toString();
 					}
