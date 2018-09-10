@@ -1,3 +1,4 @@
+[[https://github.com/i-yam-jeremy/gemloop/blob/master/images/GemLoop.svg|alt=GemLoop]]
 # GemLoop
 A programming language that is mainly functional, but with some object-oriented concepts as well. I created this language because I like writing parsers, compilers and interpreters. If you find it useful or want to modify it please feel free to use it. You can try out and experiment with the following examples as you read in the [playground](https://i-yam-jeremy.github.io/gemloop).
 

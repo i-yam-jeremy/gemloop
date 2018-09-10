@@ -1237,6 +1237,9 @@ const GemLoopInterpreter = (() => {
 	*/
 	function run(s) {
 		let expr = GemLoopParser.parse(s);
+		if (!expr) {
+			throw "No expression found";
+		}
 		let scope = {};
 		let result = evalExpr(expr, scope);
 		return result;
